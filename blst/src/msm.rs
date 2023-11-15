@@ -1,5 +1,8 @@
 use core::{mem::size_of, ptr::null_mut};
 
+extern crate alloc;
+use alloc::vec;
+
 use blst::{
     blst_fp, blst_p1, blst_p1_add, blst_p1_affine, blst_p1_double, blst_p1_from_affine,
     blst_p1_mult, blst_p1s_mult_wbits, blst_p1s_mult_wbits_precompute, byte, limb_t,
