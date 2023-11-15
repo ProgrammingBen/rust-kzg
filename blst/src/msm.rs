@@ -1,9 +1,8 @@
 use core::{mem::size_of, ptr::null_mut};
 
 use blst::{
-    blst_fp, blst_p1, blst_p1_add, blst_p1_add_or_double, blst_p1_affine, blst_p1_double,
-    blst_p1_from_affine, blst_p1_mult, blst_p1s_add, blst_p1s_mult_wbits,
-    blst_p1s_mult_wbits_precompute, blst_p1s_tile_pippenger, byte, limb_t,
+    blst_fp, blst_p1, blst_p1_add, blst_p1_affine, blst_p1_double, blst_p1_from_affine,
+    blst_p1_mult, blst_p1s_mult_wbits, blst_p1s_mult_wbits_precompute, byte, limb_t,
 };
 
 fn pippenger_window_size(mut npoints: usize) -> usize {
@@ -35,12 +34,8 @@ fn is_zero(val: limb_t) -> limb_t {
 fn booth_encode(wval: limb_t, sz: usize) -> limb_t {
     let mask = (0 as limb_t).wrapping_sub(wval >> sz);
 
-    let inp = wval;
-
     let wval = (wval + 1) >> 1;
-    let wval = (wval ^ mask).wrapping_sub(mask);
-
-    wval
+    (wval ^ mask).wrapping_sub(mask)
 }
 
 #[inline(always)]
@@ -62,7 +57,7 @@ unsafe fn get_wval_limb(mut d: *const byte, off: usize, bits: usize) -> limb_t {
 
     let mut ret: limb_t = 0;
     let mut i: usize = 0;
-    let out = loop {
+    loop {
         ret |= (*d as limb_t & mask) << (8 * i);
         mask =
             (0 as limb_t).wrapping_sub(((i + 1).wrapping_sub(top) >> (usize::BITS - 1)) as limb_t);
@@ -71,9 +66,7 @@ unsafe fn get_wval_limb(mut d: *const byte, off: usize, bits: usize) -> limb_t {
         if i >= 4 {
             break ret >> (off % 8);
         }
-    };
-
-    out
+    }
 }
 
 #[inline(always)]
@@ -146,6 +139,8 @@ unsafe fn p1_dadd_affine(
             &BLS12_381_RX_P as *const blst_fp as *const u8,
             size_of::<blst_fp>(),
         );
+        // return
+        return;
     }
 
     let mut p = blst_fp::default();
@@ -251,7 +246,7 @@ unsafe fn p1_dadd(p3: *mut P1XYZZ, p1: *const P1XYZZ, p2: *const P1XYZZ) {
         vec_copy(p3 as *mut u8, p1 as *const u8, size_of::<P1XYZZ>());
         // return;
         return;
-        // else if (vec_is_zero(p1->ZZZ, 2 * sizeof(p1->ZZZ)))
+    // else if (vec_is_zero(p1->ZZZ, 2 * sizeof(p1->ZZZ)))
     } else if vec_is_zero(
         &(*p1).zzz as *const blst_fp as *const u8,
         2 * size_of::<blst_fp>(),
@@ -282,7 +277,7 @@ unsafe fn p1_dadd(p3: *mut P1XYZZ, p1: *const P1XYZZ, p2: *const P1XYZZ) {
     blst::blst_fp_sub(&mut r, &r, &s);
 
     // if (!vec_is_zero(P, sizeof(P)))
-    if vec_is_zero(&p as *const blst_fp as *const u8, size_of::<blst_fp>()) != 0 {
+    if vec_is_zero(&p as *const blst_fp as *const u8, size_of::<blst_fp>()) == 0 {
         // vec384 PP, PPP, Q;
         let mut pp = blst_fp::default();
         let mut ppp = blst_fp::default();
@@ -364,7 +359,7 @@ unsafe fn p1_dadd(p3: *mut P1XYZZ, p1: *const P1XYZZ, p2: *const P1XYZZ) {
 }
 
 #[repr(C)]
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, Debug)]
 struct P1XYZZ {
     x: blst_fp,
     y: blst_fp,
@@ -378,7 +373,6 @@ unsafe fn p1s_bucket(
     wbits: usize,
     p: *const blst_p1_affine,
 ) {
-    println!("{booth_idx} {wbits}");
     let booth_sign = (booth_idx >> wbits) & 1;
     booth_idx &= (1 << wbits) - 1;
     if booth_idx != 0 {
@@ -395,6 +389,8 @@ unsafe fn p1s_bucket(
 unsafe fn p1_to_jacobian(out: *mut blst_p1, input: *const P1XYZZ) {
     // POINTonE1 *out, const POINTonE1xyzz *in
 
+    // blst::blst_p1_from_jacobian(out, in_)
+
     // mul_fp(out->X, in->X, in->ZZ);
     blst::blst_fp_mul(&mut (*out).x, &(*input).x, &(*input).zz);
     // mul_fp(out->Y, in->Y, in->ZZZ);
@@ -409,7 +405,6 @@ unsafe fn p1_to_jacobian(out: *mut blst_p1, input: *const P1XYZZ) {
 
 unsafe fn p1_integrate_buckets(out: *mut blst_p1, buckets: *mut P1XYZZ, wbits: usize) {
     // POINTonE1xyzz ret[1], acc[1];
-
     let mut ret = [P1XYZZ::default()];
     let mut acc = [P1XYZZ::default()];
 
@@ -438,25 +433,26 @@ unsafe fn p1_integrate_buckets(out: *mut blst_p1, buckets: *mut P1XYZZ, wbits: u
         n -= 1;
 
         // POINTonE1xyzz_dadd(acc, acc, &buckets[n]);
-        p1_dadd(acc.as_mut_ptr(), acc.as_mut_ptr(), buckets.wrapping_add(n));
+        p1_dadd(acc.as_mut_ptr(), acc.as_ptr(), buckets.wrapping_add(n));
         // POINTonE1xyzz_dadd(ret, ret, acc);
-        p1_dadd(ret.as_mut_ptr(), ret.as_mut_ptr(), acc.as_mut_ptr());
+        p1_dadd(ret.as_mut_ptr(), ret.as_ptr(), acc.as_ptr());
         // vec_zero(&buckets[n], sizeof(buckets[n]));
         vec_zero(buckets.wrapping_add(n) as *mut limb_t, size_of::<P1XYZZ>());
     }
 
     // POINTonE1xyzz_to_Jacobian(out, ret);
+    // blst::blst_p1_from_jacobian(out, ret.as_ptr() as *const blst_p1);
     p1_to_jacobian(out, ret.as_ptr());
 }
 
-unsafe fn p1_prefetch() {
-    // booth_idx &= (1 << wbits) - 1;
-    // if (booth_idx--)
-    //     vec_prefetch(&buckets[booth_idx], sizeof(buckets[booth_idx]));
-}
+// unsafe fn p1_prefetch() {
+// booth_idx &= (1 << wbits) - 1;
+// if (booth_idx--)
+//     vec_prefetch(&buckets[booth_idx], sizeof(buckets[booth_idx]));
+// }
 
 #[allow(clippy::too_many_arguments)]
-unsafe fn p1s_tile_pippenger_hidden(
+unsafe fn p1s_tile_pippenger(
     ret: *mut blst_p1,
     mut points: *const *const blst_p1_affine,
     mut npoints: usize,
@@ -535,44 +531,18 @@ unsafe fn p1s_tile_pippenger_hidden(
             v
         };
         // POINTonE1_bucket(buckets, wval, cbits, point);
-        p1s_bucket(buckets as *mut P1XYZZ, wval, wbits, point);
+        p1s_bucket(buckets as *mut P1XYZZ, wval, cbits, point);
     }
     // point = *points ? *points++ : point + 1;
     point = if (*points).is_null() {
         point.wrapping_add(1)
     } else {
-        let v = *points;
-        points = points.wrapping_add(1);
-        v
+        *points
     };
     // POINTonE1_bucket(buckets, wnxt, cbits, point);
     p1s_bucket(buckets as *mut P1XYZZ, wnxt, cbits, point);
     // POINTonE1_integrate_buckets(ret, buckets, cbits - 1);
-    // TODO:
     p1_integrate_buckets(ret, buckets as *mut P1XYZZ, cbits - 1);
-}
-
-#[allow(clippy::too_many_arguments)]
-unsafe fn p1s_tile_pippenger(
-    ret: *mut blst_p1,
-    points: *const *const blst_p1_affine,
-    npoints: usize,
-    scalars: *const *const byte,
-    nbits: usize,
-    scratch: *mut limb_t,
-    bit0: usize,
-    window: usize,
-) {
-    let (wbits, cbits) = if bit0 + window > nbits {
-        let wbits = nbits - bit0;
-        (wbits, wbits + 1)
-    } else {
-        (window, window)
-    };
-
-    p1s_tile_pippenger_hidden(
-        ret, points, npoints, scalars, nbits, scratch, bit0, wbits, cbits,
-    );
 }
 
 unsafe fn pippenger(
@@ -614,7 +584,8 @@ unsafe fn pippenger(
             nbits,
             buckets,
             bit0,
-            window,
+            wbits,
+            cbits,
         );
         blst_p1_add(ret, ret, tile.as_mut_ptr());
         for _ in 0..window {
@@ -631,7 +602,8 @@ unsafe fn pippenger(
         nbits,
         buckets,
         0,
-        window,
+        wbits,
+        cbits,
     );
     blst_p1_add(ret, ret, tile.as_mut_ptr());
 

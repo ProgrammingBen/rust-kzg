@@ -9,9 +9,7 @@ use core::ptr;
 #[cfg(feature = "parallel")]
 use blst::p1_affines;
 #[cfg(not(feature = "parallel"))]
-use blst::{
-    blst_p1s_mult_pippenger, blst_p1s_mult_pippenger_scratch_sizeof, blst_p1s_to_affine, limb_t,
-};
+use blst::{blst_p1s_mult_pippenger_scratch_sizeof, blst_p1s_to_affine, limb_t};
 
 use blst::{
     blst_fp12_is_one, blst_p1, blst_p1_affine, blst_p1_cneg, blst_p1_to_affine, blst_p2_affine,
@@ -125,13 +123,9 @@ pub fn pairings_verify(a1: &FsG1, a2: &FsG2, b1: &FsG1, b2: &FsG2) -> bool {
 
 #[cfg(test)]
 mod test {
-    use std::{
-        fs::File,
-        io::{Read, Write},
-    };
+    use std::{fs::File, io::Read};
 
-    use blst::blst_p1_compress;
-    use kzg::{Fr, G1Mul, G1};
+    use kzg::{Fr, G1};
 
     use crate::{
         kzg_proofs::g1_linear_combination,
@@ -164,10 +158,7 @@ mod test {
         //     out += "\n";
 
         //     for pt in p.clone() {
-        //         let mut bytes = [0u8; 48];
-        //         unsafe {
-        //             blst_p1_compress(bytes.as_mut_ptr(), &pt.0);
-        //         }
+
         //         out += hex::encode(bytes).as_str();
         //         out += "\n";
         //     }
