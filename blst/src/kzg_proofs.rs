@@ -20,6 +20,7 @@ use blst::{
 
 use kzg::{G1Mul, PairingVerify, G1};
 
+use crate::msm::msm;
 use crate::types::fr::FsFr;
 use crate::types::g1::FsG1;
 use crate::types::g2::FsG2;
@@ -82,7 +83,7 @@ pub fn g1_linear_combination(out: &mut FsG1, points: &[FsG1], scalars: &[FsFr], 
         let scalars_arg: [*const blst_scalar; 2] = [p_scalars.as_ptr(), ptr::null()];
         let points_arg: [*const blst_p1_affine; 2] = [p_affine.as_ptr(), ptr::null()];
         unsafe {
-            blst_p1s_mult_pippenger(
+            msm(
                 &mut out.0,
                 points_arg.as_ptr(),
                 len,
@@ -119,5 +120,93 @@ pub fn pairings_verify(a1: &FsG1, a2: &FsG2, b1: &FsG1, b2: &FsG2) -> bool {
         let gt_point = pairing_blst.as_fp12().final_exp();
 
         blst_fp12_is_one(&gt_point)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{
+        fs::File,
+        io::{Read, Write},
+    };
+
+    use blst::blst_p1_compress;
+    use kzg::{Fr, G1Mul, G1};
+
+    use crate::{
+        kzg_proofs::g1_linear_combination,
+        types::{fr::FsFr, g1::FsG1},
+    };
+
+    #[test]
+    fn test_test() {
+        // {
+        //     let len: usize = 128;
+        //     let mut coeffs = vec![FsFr::default(); len];
+        //     let mut p = vec![FsG1::default(); len];
+        //     let mut p1tmp = FsG1::generator();
+
+        //     for i in 0..len {
+        //         coeffs[i] = FsFr::rand();
+        //         p[i] = p1tmp;
+        //         p1tmp = p1tmp.dbl();
+        //     }
+
+        //     let mut exp = FsG1::identity();
+        //     for i in 0..len {
+        //         p1tmp = p[i].mul(&coeffs[i]);
+        //         exp = exp.add_or_dbl(&p1tmp);
+        //     }
+
+        //     let mut out = String::new();
+
+        //     out += len.to_string().as_str();
+        //     out += "\n";
+
+        //     for pt in p.clone() {
+        //         let mut bytes = [0u8; 48];
+        //         unsafe {
+        //             blst_p1_compress(bytes.as_mut_ptr(), &pt.0);
+        //         }
+        //         out += hex::encode(bytes).as_str();
+        //         out += "\n";
+        //     }
+
+        //     for c in coeffs.clone() {
+        //         out += hex::encode(c.to_bytes()).as_str();
+        //         out += "\n";
+        //     }
+
+        //     let mut bytes = [0u8; 48];
+        //     unsafe {
+        //         blst_p1_compress(bytes.as_mut_ptr(), &exp.0);
+        //     }
+        //     out += hex::encode(bytes).as_str();
+        //     out += "\n";
+
+        //     let mut test_f = File::create("test.txt").unwrap();
+        //     test_f.write_all(out.as_bytes()).unwrap();
+        // }
+
+        let mut test_file = File::open("test.txt").unwrap();
+        let mut contents = String::new();
+        test_file.read_to_string(&mut contents).unwrap();
+
+        let mut lines = contents.lines();
+
+        let len = lines.next().unwrap().parse::<usize>().unwrap();
+        let p = (0..len)
+            .map(|_| FsG1::from_bytes(&hex::decode(lines.next().unwrap()).unwrap()).unwrap())
+            .collect::<Vec<FsG1>>();
+        let coeffs = (0..len)
+            .map(|_| FsFr::from_bytes(&hex::decode(lines.next().unwrap()).unwrap()).unwrap())
+            .collect::<Vec<FsFr>>();
+        let exp = FsG1::from_bytes(&hex::decode(lines.next().unwrap()).unwrap()).unwrap();
+
+        let mut res = FsG1::default();
+
+        g1_linear_combination(&mut res, &p, &coeffs, len);
+
+        assert!(exp.equals(&res));
     }
 }
