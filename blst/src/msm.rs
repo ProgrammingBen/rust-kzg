@@ -623,6 +623,7 @@ unsafe fn pippenger(
     // // POINTonE1_dadd(ret, ret, tile, NULL);
 }
 
+#[allow(unused)]
 pub unsafe fn msm(
     ret: *mut blst_p1,
     points: *const *const blst_p1_affine,

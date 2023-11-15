@@ -18,6 +18,7 @@ use blst::{
 
 use kzg::{G1Mul, PairingVerify, G1};
 
+#[cfg(not(feature = "parallel"))]
 use crate::msm::msm;
 use crate::types::fr::FsFr;
 use crate::types::g1::FsG1;
