@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use core::ptr;
 
 #[cfg(feature = "parallel")]
-use blst::p1_affines;
+use crate::mult_pippenger::p1_affines;
 #[cfg(not(feature = "parallel"))]
 use blst::{blst_p1s_mult_pippenger_scratch_sizeof, blst_p1s_to_affine, limb_t};
 
@@ -44,7 +44,6 @@ pub fn g1_linear_combination(out: &mut FsG1, points: &[FsG1], scalars: &[FsFr], 
     {
         let points = unsafe { core::slice::from_raw_parts(points.as_ptr() as *const blst_p1, len) };
         let points = p1_affines::from(points);
-
         let mut scalar_bytes: Vec<u8> = Vec::with_capacity(len * 32);
         for bytes in scalars.iter().map(|b| {
             let mut scalar = blst_scalar::default();
