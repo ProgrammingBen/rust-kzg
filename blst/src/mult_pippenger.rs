@@ -1,19 +1,26 @@
 // Copyright Supranational LLC
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
-#[allow(non_camel_case_types)]
+extern crate blst;
 extern crate core;
 extern crate threadpool;
-extern crate blst;
+use blst::{
+    blst_p1, blst_p1_add_or_double, blst_p1_affine, blst_p1_double, blst_p1s_add,
+    blst_p1s_mult_pippenger, blst_p1s_mult_pippenger_scratch_sizeof, blst_p1s_tile_pippenger,
+    blst_p1s_to_affine,
+};
+use blst::{
+    blst_p2, blst_p2_add_or_double, blst_p2_affine, blst_p2_double, blst_p2s_add,
+    blst_p2s_mult_pippenger, blst_p2s_mult_pippenger_scratch_sizeof, blst_p2s_tile_pippenger,
+    blst_p2s_to_affine,
+};
+use core::mem::MaybeUninit;
 use core::num::Wrapping;
 use core::ops::{Index, IndexMut};
-use core::slice::SliceIndex;
 use core::ptr;
-use std::sync::{Barrier, Arc, mpsc::channel};
+use core::slice::SliceIndex;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use core::mem::MaybeUninit;
-use blst::{blst_p1, blst_p1_affine, blst_p1s_to_affine, blst_p1s_mult_pippenger_scratch_sizeof, blst_p1s_mult_pippenger, blst_p1s_tile_pippenger, blst_p1_add_or_double, blst_p1_double, blst_p1s_add};
-use blst::{blst_p2, blst_p2_affine, blst_p2s_to_affine, blst_p2s_mult_pippenger_scratch_sizeof, blst_p2s_mult_pippenger, blst_p2s_tile_pippenger, blst_p2_add_or_double, blst_p2_double, blst_p2s_add};
+use std::sync::{mpsc::channel, Arc, Barrier};
 
 struct Tile {
     x: usize,
@@ -34,8 +41,7 @@ use threadpool::ThreadPool;
 
 pub fn da_pool() -> ThreadPool {
     static INIT: Once = Once::new();
-    static mut POOL: *const Mutex<ThreadPool> =
-        0 as *const Mutex<ThreadPool>;
+    static mut POOL: *const Mutex<ThreadPool> = 0 as *const Mutex<ThreadPool>;
 
     INIT.call_once(|| {
         let pool = Mutex::new(ThreadPool::default());
@@ -53,12 +59,9 @@ impl ThreadPoolExt for ThreadPool {
     {
         // Bypass 'lifetime limitations by brute force. It works,
         // because we explicitly join the threads...
-        self.execute(unsafe {
-            transmute::<Thunk<'scope>, Thunk<'static>>(Box::new(job))
-        })
+        self.execute(unsafe { transmute::<Thunk<'scope>, Thunk<'static>>(Box::new(job)) })
     }
 }
-
 
 // Minimalist core::cell::Cell stand-in, but with Sync marker, which
 // makes it possible to pass it to multiple threads. It works, because
@@ -119,8 +122,7 @@ impl p1_affines {
         nslices = core::cmp::min(nslices, ncpus);
         let wg = Arc::new((Barrier::new(2), AtomicUsize::new(nslices)));
 
-        let (mut delta, mut rem) =
-            (npoints / nslices + 1, Wrapping(npoints % nslices));
+        let (mut delta, mut rem) = (npoints / nslices + 1, Wrapping(npoints % nslices));
         let mut x = 0usize;
         while x < npoints {
             let out = &mut ret.points[x];
@@ -155,8 +157,7 @@ impl p1_affines {
         let pool = da_pool();
         let ncpus = pool.max_count();
         if ncpus < 2 || npoints < 32 {
-            let p: [*const blst_p1_affine; 2] =
-                [&self.points[0], ptr::null()];
+            let p: [*const blst_p1_affine; 2] = [&self.points[0], ptr::null()];
             let s: [*const u8; 2] = [&scalars[0], ptr::null()];
 
             unsafe {
@@ -165,26 +166,19 @@ impl p1_affines {
                 #[allow(clippy::uninit_vec)]
                 scratch.set_len(scratch.capacity());
                 let mut ret = <blst_p1>::default();
-                blst_p1s_mult_pippenger(
-                    &mut ret,
-                    &p[0],
-                    npoints,
-                    &s[0],
-                    nbits,
-                    &mut scratch[0],
-                );
+                blst_p1s_mult_pippenger(&mut ret, &p[0], npoints, &s[0], nbits, &mut scratch[0]);
                 return ret;
             }
         }
 
-        let (nx, ny, window) =
-            breakdown(nbits, pippenger_window_size(npoints), ncpus);
+        let (nx, ny, window) = breakdown(nbits, pippenger_window_size(npoints), ncpus);
 
         // |grid[]| holds "coordinates" and place for result
-        let mut grid: Vec<(Tile, Cell<blst_p1>)> =
-            Vec::with_capacity(nx * ny);
+        let mut grid: Vec<(Tile, Cell<blst_p1>)> = Vec::with_capacity(nx * ny);
         #[allow(clippy::uninit_vec)]
-        unsafe { grid.set_len(grid.capacity()) };
+        unsafe {
+            grid.set_len(grid.capacity())
+        };
         let dx = npoints / nx;
         let mut y = window * (ny - 1);
         let mut total = 0usize;
@@ -225,8 +219,7 @@ impl p1_affines {
 
             pool.joined_execute(move || {
                 let mut scratch = vec![0u64; sz << (window - 1)];
-                let mut p: [*const blst_p1_affine; 2] =
-                    [ptr::null(), ptr::null()];
+                let mut p: [*const blst_p1_affine; 2] = [ptr::null(), ptr::null()];
                 let mut s: [*const u8; 2] = [ptr::null(), ptr::null()];
 
                 loop {
@@ -251,10 +244,7 @@ impl p1_affines {
                             window,
                         );
                     }
-                    if row_sync[y / window]
-                        .fetch_add(1, Ordering::AcqRel)
-                        == nx - 1
-                    {
+                    if row_sync[y / window].fetch_add(1, Ordering::AcqRel) == nx - 1 {
                         tx.send(y).expect("disaster");
                     }
                 }
@@ -270,11 +260,7 @@ impl p1_affines {
             while grid[row].0.y == y {
                 while row < total && grid[row].0.y == y {
                     unsafe {
-                        blst_p1_add_or_double(
-                            &mut ret,
-                            &ret,
-                            grid[row].1.as_ptr(),
-                        );
+                        blst_p1_add_or_double(&mut ret, &ret, grid[row].1.as_ptr());
                     }
                     row += 1;
                 }
@@ -321,8 +307,7 @@ impl p1_affines {
                 let mut p: [*const _; 2] = [ptr::null(), ptr::null()];
 
                 loop {
-                    let work =
-                        counter.fetch_add(chunk, Ordering::Relaxed);
+                    let work = counter.fetch_add(chunk, Ordering::Relaxed);
                     if work >= npoints {
                         break;
                     }
@@ -342,9 +327,7 @@ impl p1_affines {
 
         let mut ret = rx.recv().unwrap();
         for _ in 1..n_workers {
-            unsafe {
-                blst_p1_add_or_double(&mut ret, &ret, &rx.recv().unwrap())
-            };
+            unsafe { blst_p1_add_or_double(&mut ret, &ret, &rx.recv().unwrap()) };
         }
 
         ret
@@ -395,8 +378,7 @@ impl p2_affines {
         nslices = core::cmp::min(nslices, ncpus);
         let wg = Arc::new((Barrier::new(2), AtomicUsize::new(nslices)));
 
-        let (mut delta, mut rem) =
-            (npoints / nslices + 1, Wrapping(npoints % nslices));
+        let (mut delta, mut rem) = (npoints / nslices + 1, Wrapping(npoints % nslices));
         let mut x = 0usize;
         while x < npoints {
             let out = &mut ret.points[x];
@@ -431,8 +413,7 @@ impl p2_affines {
         let pool = da_pool();
         let ncpus = pool.max_count();
         if ncpus < 2 || npoints < 32 {
-            let p: [*const blst_p2_affine; 2] =
-                [&self.points[0], ptr::null()];
+            let p: [*const blst_p2_affine; 2] = [&self.points[0], ptr::null()];
             let s: [*const u8; 2] = [&scalars[0], ptr::null()];
 
             unsafe {
@@ -441,26 +422,19 @@ impl p2_affines {
                 #[allow(clippy::uninit_vec)]
                 scratch.set_len(scratch.capacity());
                 let mut ret = <blst_p2>::default();
-                blst_p2s_mult_pippenger(
-                    &mut ret,
-                    &p[0],
-                    npoints,
-                    &s[0],
-                    nbits,
-                    &mut scratch[0],
-                );
+                blst_p2s_mult_pippenger(&mut ret, &p[0], npoints, &s[0], nbits, &mut scratch[0]);
                 return ret;
             }
         }
 
-        let (nx, ny, window) =
-            breakdown(nbits, pippenger_window_size(npoints), ncpus);
+        let (nx, ny, window) = breakdown(nbits, pippenger_window_size(npoints), ncpus);
 
         // |grid[]| holds "coordinates" and place for result
-        let mut grid: Vec<(Tile, Cell<blst_p2>)> =
-            Vec::with_capacity(nx * ny);
+        let mut grid: Vec<(Tile, Cell<blst_p2>)> = Vec::with_capacity(nx * ny);
         #[allow(clippy::uninit_vec)]
-        unsafe { grid.set_len(grid.capacity()) };
+        unsafe {
+            grid.set_len(grid.capacity())
+        };
         let dx = npoints / nx;
         let mut y = window * (ny - 1);
         let mut total = 0usize;
@@ -501,8 +475,7 @@ impl p2_affines {
 
             pool.joined_execute(move || {
                 let mut scratch = vec![0u64; sz << (window - 1)];
-                let mut p: [*const blst_p2_affine; 2] =
-                    [ptr::null(), ptr::null()];
+                let mut p: [*const blst_p2_affine; 2] = [ptr::null(), ptr::null()];
                 let mut s: [*const u8; 2] = [ptr::null(), ptr::null()];
 
                 loop {
@@ -527,10 +500,7 @@ impl p2_affines {
                             window,
                         );
                     }
-                    if row_sync[y / window]
-                        .fetch_add(1, Ordering::AcqRel)
-                        == nx - 1
-                    {
+                    if row_sync[y / window].fetch_add(1, Ordering::AcqRel) == nx - 1 {
                         tx.send(y).expect("disaster");
                     }
                 }
@@ -546,11 +516,7 @@ impl p2_affines {
             while grid[row].0.y == y {
                 while row < total && grid[row].0.y == y {
                     unsafe {
-                        blst_p2_add_or_double(
-                            &mut ret,
-                            &ret,
-                            grid[row].1.as_ptr(),
-                        );
+                        blst_p2_add_or_double(&mut ret, &ret, grid[row].1.as_ptr());
                     }
                     row += 1;
                 }
@@ -597,8 +563,7 @@ impl p2_affines {
                 let mut p: [*const _; 2] = [ptr::null(), ptr::null()];
 
                 loop {
-                    let work =
-                        counter.fetch_add(chunk, Ordering::Relaxed);
+                    let work = counter.fetch_add(chunk, Ordering::Relaxed);
                     if work >= npoints {
                         break;
                     }
@@ -618,9 +583,7 @@ impl p2_affines {
 
         let mut ret = rx.recv().unwrap();
         for _ in 1..n_workers {
-            unsafe {
-                blst_p2_add_or_double(&mut ret, &ret, &rx.recv().unwrap())
-            };
+            unsafe { blst_p2_add_or_double(&mut ret, &ret, &rx.recv().unwrap()) };
         }
 
         ret
@@ -631,11 +594,7 @@ fn num_bits(l: usize) -> usize {
     8 * core::mem::size_of_val(&l) - l.leading_zeros() as usize
 }
 
-fn breakdown(
-    nbits: usize,
-    window: usize,
-    ncpus: usize,
-) -> (usize, usize, usize) {
+fn breakdown(nbits: usize, window: usize, ncpus: usize) -> (usize, usize, usize) {
     let mut nx: usize;
     let mut wnd: usize;
 

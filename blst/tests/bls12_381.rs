@@ -13,6 +13,7 @@ mod tests {
     use rust_kzg_blst::types::fr::FsFr;
     use rust_kzg_blst::types::g1::FsG1;
     use rust_kzg_blst::types::g2::FsG2;
+    use rust_kzg_blst::types::kzg_settings::BGMWPreComputationList;
 
     #[test]
     fn log_2_byte_works_() {
@@ -71,7 +72,7 @@ mod tests {
 
     #[test]
     fn p1_mul_works_() {
-        p1_mul_works::<FsFr, FsG1>()
+        p1_mul_works::<BGMWPreComputationList, FsFr, FsG1>()
     }
 
     #[test]
@@ -106,16 +107,16 @@ mod tests {
 
     #[test]
     fn g1_make_linear_combination_() {
-        g1_make_linear_combination::<FsFr, FsG1>(&g1_linear_combination)
+        g1_make_linear_combination::<BGMWPreComputationList, FsFr, FsG1>(&g1_linear_combination)
     }
 
     #[test]
     fn g1_random_linear_combination_() {
-        g1_random_linear_combination::<FsFr, FsG1>(&g1_linear_combination)
+        g1_random_linear_combination::<BGMWPreComputationList, FsFr, FsG1>(&g1_linear_combination)
     }
 
     #[test]
     fn pairings_work_() {
-        pairings_work::<FsFr, FsG1, FsG2>(&pairings_verify)
+        pairings_work::<BGMWPreComputationList, FsFr, FsG1, FsG2>(&pairings_verify)
     }
 }

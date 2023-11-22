@@ -11,6 +11,7 @@ use crate::types::fft_settings::FsFFTSettings;
 use crate::types::fr::FsFr;
 use crate::types::g1::FsG1;
 use crate::types::g2::FsG2;
+use crate::types::kzg_settings::BGMWPreComputationList;
 use crate::types::kzg_settings::FsKZGSettings;
 use crate::types::poly::FsPoly;
 
@@ -40,8 +41,16 @@ impl Default for FsFK20MultiSettings {
     }
 }
 
-impl FK20MultiSettings<FsFr, FsG1, FsG2, FsFFTSettings, FsPoly, FsKZGSettings>
-    for FsFK20MultiSettings
+impl
+    FK20MultiSettings<
+        FsFr,
+        FsG1,
+        FsG2,
+        FsFFTSettings,
+        FsPoly,
+        BGMWPreComputationList,
+        FsKZGSettings,
+    > for FsFK20MultiSettings
 {
     #[allow(clippy::many_single_char_names)]
     fn new(ks: &FsKZGSettings, n2: usize, chunk_len: usize) -> Result<Self, String> {

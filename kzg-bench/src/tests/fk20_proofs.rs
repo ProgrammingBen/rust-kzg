@@ -14,8 +14,9 @@ pub fn fk_single<
     TG2: G2,
     TPoly: Poly<TFr>,
     TFFTSettings: FFTSettings<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
-    TFK20SingleSettings: FK20SingleSettings<TFr, TG1, TG2, TFFTSettings, TPoly, TKZGSettings>,
+    BGMWPreComputationList,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
+    TFK20SingleSettings: FK20SingleSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList, TKZGSettings>,
 >(
     generate_trusted_setup: &dyn Fn(usize, [u8; 32usize]) -> (Vec<TG1>, Vec<TG2>),
 ) {
@@ -72,8 +73,9 @@ pub fn fk_single_strided<
     TG2: G2,
     TPoly: Poly<TFr>,
     TFFTSettings: FFTSettings<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
-    TFK20SingleSettings: FK20SingleSettings<TFr, TG1, TG2, TFFTSettings, TPoly, TKZGSettings>,
+    BGMWPreComputationList,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
+    TFK20SingleSettings: FK20SingleSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList, TKZGSettings>,
 >(
     generate_trusted_setup: &dyn Fn(usize, [u8; 32usize]) -> (Vec<TG1>, Vec<TG2>),
 ) {
@@ -117,8 +119,9 @@ pub fn fk_multi_settings<
     TG2: G2,
     TPoly: Poly<TFr>,
     TFFTSettings: FFTSettings<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
-    TFK20MultiSettings: FK20MultiSettings<TFr, TG1, TG2, TFFTSettings, TPoly, TKZGSettings>,
+    BGMWPreComputationList,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
+    TFK20MultiSettings: FK20MultiSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList, TKZGSettings>,
 >(
     generate_trusted_setup: &dyn Fn(usize, [u8; 32usize]) -> (Vec<TG1>, Vec<TG2>),
 ) {
@@ -138,8 +141,9 @@ fn fk_multi_case<
     TG2: G2,
     TPoly: Poly<TFr>,
     TFFTSettings: FFTSettings<TFr> + FFTFr<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
-    TFK20MultiSettings: FK20MultiSettings<TFr, TG1, TG2, TFFTSettings, TPoly, TKZGSettings>,
+    BGMWPreComputationList,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
+    TFK20MultiSettings: FK20MultiSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList, TKZGSettings>,
 >(
     chunk_len: usize,
     n: usize,
@@ -240,16 +244,22 @@ pub fn fk_multi_chunk_len_1_512<
     TG2: G2,
     TPoly: Poly<TFr>,
     TFFTSettings: FFTSettings<TFr> + FFTFr<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
-    TFK20MultiSettings: FK20MultiSettings<TFr, TG1, TG2, TFFTSettings, TPoly, TKZGSettings>,
+    BGMWPreComputationList,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
+    TFK20MultiSettings: FK20MultiSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList, TKZGSettings>,
 >(
     generate_trusted_setup: &dyn Fn(usize, [u8; 32usize]) -> (Vec<TG1>, Vec<TG2>),
 ) {
-    fk_multi_case::<TFr, TG1, TG2, TPoly, TFFTSettings, TKZGSettings, TFK20MultiSettings>(
-        1,
-        512,
-        &generate_trusted_setup,
-    );
+    fk_multi_case::<
+        TFr,
+        TG1,
+        TG2,
+        TPoly,
+        TFFTSettings,
+        BGMWPreComputationList,
+        TKZGSettings,
+        TFK20MultiSettings,
+    >(1, 512, &generate_trusted_setup);
 }
 
 pub fn fk_multi_chunk_len_16_512<
@@ -258,16 +268,22 @@ pub fn fk_multi_chunk_len_16_512<
     TG2: G2,
     TPoly: Poly<TFr>,
     TFFTSettings: FFTSettings<TFr> + FFTFr<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
-    TFK20MultiSettings: FK20MultiSettings<TFr, TG1, TG2, TFFTSettings, TPoly, TKZGSettings>,
+    BGMWPreComputationList,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
+    TFK20MultiSettings: FK20MultiSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList, TKZGSettings>,
 >(
     generate_trusted_setup: &dyn Fn(usize, [u8; 32usize]) -> (Vec<TG1>, Vec<TG2>),
 ) {
-    fk_multi_case::<TFr, TG1, TG2, TPoly, TFFTSettings, TKZGSettings, TFK20MultiSettings>(
-        16,
-        512,
-        &generate_trusted_setup,
-    );
+    fk_multi_case::<
+        TFr,
+        TG1,
+        TG2,
+        TPoly,
+        TFFTSettings,
+        BGMWPreComputationList,
+        TKZGSettings,
+        TFK20MultiSettings,
+    >(16, 512, &generate_trusted_setup);
 }
 
 pub fn fk_multi_chunk_len_16_16<
@@ -276,14 +292,20 @@ pub fn fk_multi_chunk_len_16_16<
     TG2: G2,
     TPoly: Poly<TFr>,
     TFFTSettings: FFTSettings<TFr> + FFTFr<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
-    TFK20MultiSettings: FK20MultiSettings<TFr, TG1, TG2, TFFTSettings, TPoly, TKZGSettings>,
+    BGMWPreComputationList,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
+    TFK20MultiSettings: FK20MultiSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList, TKZGSettings>,
 >(
     generate_trusted_setup: &dyn Fn(usize, [u8; 32usize]) -> (Vec<TG1>, Vec<TG2>),
 ) {
-    fk_multi_case::<TFr, TG1, TG2, TPoly, TFFTSettings, TKZGSettings, TFK20MultiSettings>(
-        16,
-        16,
-        &generate_trusted_setup,
-    );
+    fk_multi_case::<
+        TFr,
+        TG1,
+        TG2,
+        TPoly,
+        TFFTSettings,
+        BGMWPreComputationList,
+        TKZGSettings,
+        TFK20MultiSettings,
+    >(16, 16, &generate_trusted_setup);
 }

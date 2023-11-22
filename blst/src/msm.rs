@@ -1,11 +1,21 @@
-use core::{mem::size_of, ptr::null_mut};
+use core::{
+    mem::size_of,
+    ptr::{self, null_mut},
+};
 
 extern crate alloc;
 use alloc::vec;
 
 use blst::{
     blst_fp, blst_fr, blst_p1, blst_p1_add, blst_p1_affine, blst_p1_double, blst_p1_from_affine,
-    blst_p1_mult, blst_p1s_mult_wbits, blst_p1s_mult_wbits_precompute, byte, limb_t,
+    blst_p1_mult, blst_p1s_mult_wbits, blst_p1s_mult_wbits_precompute, blst_p1s_to_affine,
+    blst_scalar, blst_scalar_from_fr, blst_uint64_from_scalar, byte, limb_t,
+};
+use kzg::G1Mul;
+
+use crate::{
+    bgmw::{EXPONENT_OF_Q, EXPONENT_OF_Q_BGMW95, H_BGMW95, Q_RADIX_PIPPENGER_VARIANT},
+    types::{fr::FsFr, g1::FsG1, kzg_settings::BGMWPreComputationList},
 };
 
 fn pippenger_window_size(mut npoints: usize) -> usize {
@@ -646,7 +656,7 @@ unsafe fn bgmw_pippenger_tile(
     ret: *mut blst_p1,
     mut points: *const *const blst_p1_affine,
     mut npoints: usize,
-    mut scalars: *const limb_t,
+    mut scalars: *const i32,
     mut booth_signs: *const u8,
     mut buckets: *mut P1XYZZ,
     q_exponent: usize,
@@ -681,7 +691,7 @@ unsafe fn bgmw_pippenger_tile(
     // if (booth_idx)
     if booth_idx != 0 {
         // POINTonE1_bucket_CHES(buckets, booth_idx, point, booth_sign);
-        p1s_bucket_CHES(buckets, booth_idx, point, booth_sign);
+        p1s_bucket_CHES(buckets, booth_idx as limb_t, point, booth_sign);
     }
     // --npoints;
     npoints -= 1;
@@ -705,7 +715,7 @@ unsafe fn bgmw_pippenger_tile(
         // if (booth_idx)
         if booth_idx != 0 {
             // POINTonE1_bucket_CHES(buckets, booth_idx, point, booth_sign);
-            p1s_bucket_CHES(buckets, booth_idx, point, booth_sign);
+            p1s_bucket_CHES(buckets, booth_idx as limb_t, point, booth_sign);
         }
     }
     // point = *points;
@@ -713,7 +723,7 @@ unsafe fn bgmw_pippenger_tile(
     // booth_sign = *booth_signs;
     booth_sign = *booth_signs;
     // POINTonE1_bucket_CHES(buckets, booth_idx_nxt, point, booth_sign);
-    p1s_bucket_CHES(buckets, booth_idx_nxt, point, booth_sign);
+    p1s_bucket_CHES(buckets, booth_idx_nxt as limb_t, point, booth_sign);
 
     // ++buckets;
     buckets = buckets.wrapping_add(1);
@@ -722,22 +732,117 @@ unsafe fn bgmw_pippenger_tile(
     p1_integrate_buckets(ret, buckets, q_exponent - 1);
 }
 
-unsafe fn bgmw(ret: *mut blst_p1, npoints: usize, scalars: *const *const byte) {
+fn uint256_sbb(a: u64, b: u64, borrow_in: u64) -> (u64, u64) {
+    let t_1 = a - (borrow_in >> 63);
+    let borrow_temp_1 = t_1 > a;
+    let t_2 = t_1 - b;
+    let borrow_temp_2 = t_2 > t_1;
+
+    (
+        t_2,
+        0u64.wrapping_sub((borrow_temp_1 | borrow_temp_2).into()),
+    )
+}
+
+fn uint256_sbb_discard_hi(a: u64, b: u64, borrow_in: u64) -> u64 {
+    a - b - (borrow_in >> 63)
+}
+
+fn uint256_sub(a: &[u64; 4], b: &[u64; 4]) -> [u64; 4] {
+    let (r0, t0) = uint256_sbb(a[0], b[0], 0);
+    let (r1, t1) = uint256_sbb(a[1], b[1], t0);
+    let (r2, t2) = uint256_sbb(a[2], b[2], t1);
+    let r3 = uint256_sbb_discard_hi(a[3], b[3], t2);
+
+    [r0, r1, r2, r3]
+}
+
+fn uint256_bithsift(a: &[u64; 4], bits: u64) -> [u64; 4] {
+    if bits == 0 {
+        return *a;
+    }
+
+    let num_shifted_limbs = bits >> 6;
+    let limb_shift = bits & 63;
+
+    let mut shifted_limbs = [0u64; 4];
+    if limb_shift == 0 {
+        shifted_limbs[..4].copy_from_slice(&a[..4]);
+    } else {
+        let remainder_shift = 64 - limb_shift;
+        shifted_limbs[3] = a[3] >> limb_shift;
+        let remainder = a[3] << remainder_shift;
+        shifted_limbs[2] = (a[2] >> limb_shift) + remainder;
+        let remainder = a[2] << remainder_shift;
+        shifted_limbs[1] = (a[1] >> limb_shift) + remainder;
+        let remainder = a[1] << remainder_shift;
+        shifted_limbs[0] = (a[0] >> limb_shift) + remainder;
+    };
+
+    let mut result = [0u64; 4];
+
+    for i in 0..((4 - num_shifted_limbs) as usize) {
+        result[i] = shifted_limbs[i + (num_shifted_limbs as usize)];
+    }
+
+    result
+}
+
+fn trans_uint256_to_qhalf_expr(ret_qhalf_expr: &mut [i32], mut a: [u64; 4]) {
+    // uint256_t tmp = a;
+    // int qhalf = int (q_RADIX_PIPPENGER_VARIANT>>1);
+    let qhalf = Q_RADIX_PIPPENGER_VARIANT >> 1;
+    // uint32_t mask = uint32_t (q_RADIX_PIPPENGER_VARIANT - 1);
+    let mask = Q_RADIX_PIPPENGER_VARIANT - 1;
+
+    // for (int i=0; i< h_BGMW95; ++i){
+    for i in 0..H_BGMW95 {
+        // ret_qhalf_expr[i] = tmp.data[0] & mask;// we only need the bit-wise xor with the last 32-bit of tmp.
+        ret_qhalf_expr[i] = (a[0] & (mask as u64)) as i32;
+        // tmp = tmp >> EXPONENT_OF_q_BGMW95;
+        a = uint256_bithsift(&a, EXPONENT_OF_Q_BGMW95 as u64);
+    }
+    // for (int i=0; i< h_BGMW95 - 1; ++i){
+    for i in 0..(H_BGMW95 - 1) {
+        // if(ret_qhalf_expr[i] > qhalf){
+        if ret_qhalf_expr[i] > qhalf.try_into().unwrap() {
+            // ret_qhalf_expr[i] -= q_RADIX_PIPPENGER_VARIANT;
+            ret_qhalf_expr[i] -= Q_RADIX_PIPPENGER_VARIANT as i32;
+            // ret_qhalf_expr[i+1] +=1;
+            ret_qhalf_expr[i + 1] += 1;
+            // // system parameter makes sure ret_qhalf_expr[h-1]<= q/2.
+        }
+    }
+}
+
+unsafe fn bgmw(ret: &mut FsG1, npoints: usize, scalars: &[FsFr], table: &[blst_p1_affine]) {
     // std::array< int, h_BGMW95> ret_qhalf_expr;
+    let mut ret_qhalf_expr = [0i32; H_BGMW95];
 
     // uint64_t npoints = N_POINTS*h_BGMW95;
 
     // int* scalars;
     // scalars = new int [npoints];
+    let mut scalars_out = vec![0i32; npoints * H_BGMW95];
 
     // unsigned char* booth_signs; // it acts as a bool type
     // booth_signs = new unsigned char [npoints];
+    let mut booth_signs = vec![0u8; npoints * H_BGMW95];
 
     // blst_p1_affine** points_ptr;
     // points_ptr = new blst_p1_affine* [npoints];
+    let mut points_ptr = vec![ptr::null() as *const blst_p1_affine; npoints * H_BGMW95];
 
     // FIXME: this formula only works when npoints is power of two
     let n_exp = npoints.leading_zeros();
+
+    // idk, looks like BLS_MODULUS, but not sure
+    const R_GROUP_ORDER: [u64; 4] = [
+        0xffffffff00000001,
+        0x53bda402fffe5bfe,
+        0x3339d80809a1d805,
+        0x73eda753299d7d48,
+    ];
     // // This is only for BLS12-381 curve
     // if (N_EXP == 13 || N_EXP == 14 || N_EXP == 16 || N_EXP == 17){
     if n_exp == 13 || n_exp == 14 || n_exp == 16 || n_exp == 17 {
@@ -747,75 +852,120 @@ unsafe fn bgmw(ret: *mut blst_p1, npoints: usize, scalars: *const *const byte) {
         // for(int i = 0; i< N_POINTS; ++i){
         for i in 0..npoints {
             // uint256_t aa = scalars_array[i];
-            let aa = scalars;
+            let aa = scalars[i];
+
+            let mut aa_scalar = {
+                let mut scalar = blst_scalar::default();
+                let mut arr = [0u64; 4];
+                unsafe {
+                    blst_scalar_from_fr(&mut scalar, &aa.0);
+                    blst_uint64_from_scalar(arr.as_mut_ptr(), &scalar);
+                };
+
+                arr
+            };
 
             // bool condition =  (aa.data[3] > tt); // a > 0.5*q*q**(h-1)
+            let condition = aa_scalar[3] > tt;
             // if (condition == true) {
-            //     aa = r_GROUP_ORDER - aa;
-            // }
+            if condition {
+                // aa = r_GROUP_ORDER - aa;
+                aa_scalar = uint256_sub(&R_GROUP_ORDER, &aa_scalar);
+            }
 
-            // trans_uint256_t_to_qhalf_expr(ret_qhalf_expr, aa);
+            trans_uint256_to_qhalf_expr(&mut ret_qhalf_expr, aa_scalar);
 
             // if (condition == true) {
-            //     for(int j = 0; j< h_BGMW95; ++j){
-            //         size_t idx = i*h_BGMW95 + j;
-            //         scalars[idx]  = ret_qhalf_expr[j];
-            //         points_ptr[idx] =  PRECOMPUTATION_POINTS_LIST_BGMW95 + idx;
+            if condition {
+                // for(int j = 0; j< h_BGMW95; ++j){
+                for j in 0..H_BGMW95 {
+                    // size_t idx = i*h_BGMW95 + j;
+                    let idx = i * H_BGMW95 + j;
+                    // scalars[idx]  = ret_qhalf_expr[j];
+                    scalars_out[idx] = ret_qhalf_expr[j];
+                    // points_ptr[idx] =  PRECOMPUTATION_POINTS_LIST_BGMW95 + idx;
+                    points_ptr[idx] = table.as_ptr().wrapping_add(idx);
 
-            //         if ( scalars[idx] > 0) {
-            //             booth_signs[idx] = 1;
-            //         }
-            //         else{
-            //             scalars[idx] = - scalars[idx];
-            //             booth_signs[idx] = 0;
-            //         }
-            //     }
-            // }
-            // else{
-            //     for(int j = 0; j< h_BGMW95; ++j){
-            //         size_t idx = i*h_BGMW95 + j;
-            //         scalars[idx]  = ret_qhalf_expr[j];
-            //         points_ptr[idx] =  PRECOMPUTATION_POINTS_LIST_BGMW95 + idx;
+                    // if ( scalars[idx] > 0) {
+                    if scalars_out[idx] > 0 {
+                        // booth_signs[idx] = 1;
+                        booth_signs[idx] = 1;
+                    } else {
+                        // scalars[idx] = - scalars[idx];
+                        scalars_out[idx] = -scalars_out[idx];
+                        // booth_signs[idx] = 0;
+                        booth_signs[idx] = 0;
+                    }
+                }
+            } else {
+                // for(int j = 0; j< h_BGMW95; ++j){
+                for j in 0..H_BGMW95 {
+                    // size_t idx = i*h_BGMW95 + j;
+                    let idx = i * H_BGMW95 + j;
+                    // scalars[idx]  = ret_qhalf_expr[j];
+                    scalars_out[idx] = ret_qhalf_expr[j];
+                    // points_ptr[idx] =  PRECOMPUTATION_POINTS_LIST_BGMW95 + idx;
+                    points_ptr[idx] = table.as_ptr().wrapping_add(idx);
 
-            //         if ( scalars[idx] > 0) {
-            //             booth_signs[idx] = 0;
-            //         }
-            //         else{
-            //             scalars[idx] = - scalars[idx];
-            //             booth_signs[idx] = 1;
-            //         }
-            //     }
-            // }
+                    // if ( scalars[idx] > 0) {
+                    if scalars_out[idx] > 0 {
+                        // booth_signs[idx] = 0;
+                        booth_signs[idx] = 0;
+                    } else {
+                        // scalars[idx] = - scalars[idx];
+                        scalars_out[idx] = -scalars_out[idx];
+                        // booth_signs[idx] = 1;
+                        booth_signs[idx] = 1;
+                    }
+                }
+            }
         }
+    } else {
+        // for(int i = 0; i< N_POINTS; ++i){
+        for i in 0..npoints {
+            let scalar = {
+                let mut scalar = blst_scalar::default();
+                let mut arr = [0u64; 4];
+                unsafe {
+                    blst_scalar_from_fr(&mut scalar, &scalars[i].0);
+                    blst_uint64_from_scalar(arr.as_mut_ptr(), &scalar);
+                };
 
-        // }
+                arr
+            };
+
+            // trans_uint256_t_to_qhalf_expr(ret_qhalf_expr, scalars_array[i]);
+            trans_uint256_to_qhalf_expr(&mut ret_qhalf_expr, scalar);
+
+            // for(int j = 0; j< h_BGMW95; ++j){
+            for j in 0..H_BGMW95 {
+                // size_t idx = i*h_BGMW95 + j;
+                let idx = i * H_BGMW95 + j;
+                // scalars[idx]  = ret_qhalf_expr[j];
+                scalars_out[idx] = ret_qhalf_expr[j];
+                // points_ptr[idx] =  PRECOMPUTATION_POINTS_LIST_BGMW95 + idx;
+                points_ptr[idx] = table.as_ptr().wrapping_add(idx);
+                // if ( scalars[idx] > 0) {
+                if scalars_out[idx] > 0 {
+                    // booth_signs[idx] = 0;
+                    booth_signs[idx] = 0;
+                } else {
+                    // scalars[idx] = -scalars[idx];
+                    scalars_out[idx] = -scalars_out[idx];
+                    // booth_signs[idx] = 1;
+                    booth_signs[idx] = 1;
+                }
+            }
+        }
     }
-
-    // }
-    // else{
-    //     for(int i = 0; i< N_POINTS; ++i){
-    //         trans_uint256_t_to_qhalf_expr(ret_qhalf_expr, scalars_array[i]);
-
-    //         for(int j = 0; j< h_BGMW95; ++j){
-    //             size_t idx = i*h_BGMW95 + j;
-    //             scalars[idx]  = ret_qhalf_expr[j];
-    //             points_ptr[idx] =  PRECOMPUTATION_POINTS_LIST_BGMW95 + idx;
-    //             if ( scalars[idx] > 0) {
-    //                 booth_signs[idx] = 0;
-    //             }
-    //             else{
-    //                 scalars[idx] = -scalars[idx];
-    //                 booth_signs[idx] = 1;
-    //             }
-    //         }
-    //     }
-    // }
 
     // blst_p1 ret; // Mont coordinates
 
     // blst_p1xyzz* buckets;
     // int qhalf = int(q_RADIX_PIPPENGER_VARIANT>>1);
+    let qhalf = Q_RADIX_PIPPENGER_VARIANT >> 1;
     // buckets = new blst_p1xyzz [qhalf + 1];
+    let mut buckets = vec![0u8; (qhalf + 1) * size_of::<P1XYZZ>()];
 
     // blst_p1_tile_pippenger_BGMW95(&ret, \
     //                                 points_ptr, \
@@ -823,6 +973,15 @@ unsafe fn bgmw(ret: *mut blst_p1, npoints: usize, scalars: *const *const byte) {
     //                                 scalars, booth_signs,\
     //                                 buckets,\
     //                                 EXPONENT_OF_q_BGMW95);
+    bgmw_pippenger_tile(
+        &mut ret.0,
+        points_ptr.as_ptr(),
+        npoints,
+        scalars_out.as_ptr(),
+        booth_signs.as_ptr(),
+        buckets.as_mut_ptr() as *mut P1XYZZ,
+        EXPONENT_OF_Q_BGMW95,
+    );
     // delete[] buckets;
     // delete[] points_ptr;
     // delete[] booth_signs;
@@ -834,37 +993,97 @@ unsafe fn bgmw(ret: *mut blst_p1, npoints: usize, scalars: *const *const byte) {
 }
 
 #[allow(unused)]
-pub unsafe fn msm(
-    ret: *mut blst_p1,
-    points: *const *const blst_p1_affine,
+pub fn msm(
+    ret: &mut FsG1,
+    points: &[FsG1],
     npoints: usize,
-    scalars: *const *const byte,
+    scalars: &[FsFr],
     nbits: usize,
     scratch: *mut limb_t,
+    table: Option<&BGMWPreComputationList>,
 ) {
     if npoints == 1 {
-        blst_p1_from_affine(ret, *points);
-        blst_p1_mult(ret, ret, *scalars, nbits);
+        *ret = points[0].mul(&scalars[0]);
+
         return;
     }
 
     if npoints * size_of::<blst_p1_affine>() * 8 * 3 <= (144 * 1024) {
         let mut table = vec![blst_p1_affine::default(); npoints * 8];
-        blst_p1s_mult_wbits_precompute(table.as_mut_ptr(), 4, points, npoints);
-        blst_p1s_mult_wbits(ret, table.as_ptr(), 4, npoints, scalars, nbits, null_mut());
+
+        {
+            let mut points_affine = vec![blst_p1_affine::default(); npoints];
+            let points_arg: [*const blst_p1; 2] = [&points[0].0, ptr::null()];
+            unsafe { blst_p1s_to_affine(points_affine.as_mut_ptr(), points_arg.as_ptr(), npoints) };
+
+            let points_affine_arg: [*const blst_p1_affine; 2] =
+                [points_affine.as_ptr(), ptr::null()];
+
+            unsafe {
+                blst_p1s_mult_wbits_precompute(
+                    table.as_mut_ptr(),
+                    4,
+                    points_affine_arg.as_ptr(),
+                    npoints,
+                );
+            }
+        };
+
+        {
+            let mut blst_scalars = vec![blst_scalar::default(); npoints];
+
+            for i in 0..npoints {
+                unsafe { blst_scalar_from_fr(&mut blst_scalars[i], &scalars[i].0) };
+            }
+
+            let scalars_arg: [*const blst_scalar; 2] = [blst_scalars.as_ptr(), ptr::null()];
+
+            unsafe {
+                blst_p1s_mult_wbits(
+                    &mut ret.0,
+                    table.as_ptr(),
+                    4,
+                    npoints,
+                    scalars_arg.as_ptr() as *const *const u8,
+                    nbits,
+                    null_mut(),
+                );
+            }
+        }
+
         return;
     }
 
-    // if ((npoints * sizeof(POINTonE1_affine) * 8 * 3) <= SCRATCH_LIMIT)
-    // {
-    //     POINTonE1_affine *table = alloca(npoints * sizeof(POINTonE1_affine) * 8);
-    //     POINTonE1s_precompute_wbits(table, 4, points, npoints);
-    //     POINTonE1s_mult_wbits(ret, table, 4, npoints, scalars, nbits, NULL);
-    //     return;
-    // }
-    // POINTonE1s_mult_pippenger(ret, points, npoints, scalars, nbits, scratch, 0);
+    if let Some(table) = table {
+        unsafe { bgmw(ret, npoints, scalars, table.0.as_slice()) }
+    } else {
+        let mut p_affine = vec![blst_p1_affine::default(); npoints];
+        let mut p_scalars = vec![blst_scalar::default(); npoints];
 
-    pippenger(ret, points, npoints, scalars, nbits, scratch, 0);
+        let p_arg: [*const blst_p1; 2] = [&points[0].0, ptr::null()];
+        unsafe {
+            blst_p1s_to_affine(p_affine.as_mut_ptr(), p_arg.as_ptr(), npoints);
+        }
+
+        for i in 0..npoints {
+            unsafe { blst_scalar_from_fr(&mut p_scalars[i], &scalars[i].0) };
+        }
+
+        let scalars_arg: [*const blst_scalar; 2] = [p_scalars.as_ptr(), ptr::null()];
+        let points_arg: [*const blst_p1_affine; 2] = [p_affine.as_ptr(), ptr::null()];
+
+        unsafe {
+            pippenger(
+                &mut ret.0,
+                points_arg.as_ptr(),
+                npoints,
+                scalars_arg.as_ptr() as *const *const u8,
+                nbits,
+                scratch,
+                0,
+            );
+        }
+    }
 }
 
 #[cfg(test)]

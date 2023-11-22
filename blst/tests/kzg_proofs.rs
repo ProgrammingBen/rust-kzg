@@ -13,34 +13,52 @@ mod tests {
     use rust_kzg_blst::types::fr::FsFr;
     use rust_kzg_blst::types::g1::FsG1;
     use rust_kzg_blst::types::g2::FsG2;
-    use rust_kzg_blst::types::kzg_settings::FsKZGSettings;
+    use rust_kzg_blst::types::kzg_settings::{BGMWPreComputationList, FsKZGSettings};
     use rust_kzg_blst::types::poly::FsPoly;
     use rust_kzg_blst::utils::generate_trusted_setup;
 
     #[test]
     pub fn test_proof_single() {
-        proof_single::<FsFr, FsG1, FsG2, FsPoly, FsFFTSettings, FsKZGSettings>(
-            &generate_trusted_setup,
-        );
+        proof_single::<
+            FsFr,
+            FsG1,
+            FsG2,
+            FsPoly,
+            FsFFTSettings,
+            BGMWPreComputationList,
+            FsKZGSettings,
+        >(&generate_trusted_setup);
     }
 
     #[test]
     pub fn test_commit_to_nil_poly() {
-        commit_to_nil_poly::<FsFr, FsG1, FsG2, FsPoly, FsFFTSettings, FsKZGSettings>(
-            &generate_trusted_setup,
-        );
+        commit_to_nil_poly::<
+            FsFr,
+            FsG1,
+            FsG2,
+            FsPoly,
+            FsFFTSettings,
+            BGMWPreComputationList,
+            FsKZGSettings,
+        >(&generate_trusted_setup);
     }
 
     #[test]
     pub fn test_commit_to_too_long_poly() {
-        commit_to_too_long_poly_returns_err::<FsFr, FsG1, FsG2, FsPoly, FsFFTSettings, FsKZGSettings>(
-            &generate_trusted_setup,
-        );
+        commit_to_too_long_poly_returns_err::<
+            FsFr,
+            FsG1,
+            FsG2,
+            FsPoly,
+            FsFFTSettings,
+            BGMWPreComputationList,
+            FsKZGSettings,
+        >(&generate_trusted_setup);
     }
 
     #[test]
     pub fn test_proof_multi() {
-        proof_multi::<FsFr, FsG1, FsG2, FsPoly, FsFFTSettings, FsKZGSettings>(
+        proof_multi::<FsFr, FsG1, FsG2, FsPoly, FsFFTSettings, BGMWPreComputationList, FsKZGSettings>(
             &generate_trusted_setup,
         );
     }

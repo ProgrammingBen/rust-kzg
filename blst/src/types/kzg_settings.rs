@@ -1,10 +1,14 @@
 extern crate alloc;
 
+use core::ptr;
+
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use blst::{blst_p1_affine, blst_p1s_to_affine};
 use kzg::{FFTFr, FFTSettings, Fr, G1Mul, G2Mul, KZGSettings, Poly, G1, G2};
 
+use crate::bgmw::{self, H_BGMW95};
 use crate::consts::{G1_GENERATOR, G2_GENERATOR};
 use crate::kzg_proofs::{g1_linear_combination, pairings_verify};
 use crate::types::fft_settings::FsFFTSettings;
@@ -18,19 +22,41 @@ pub struct FsKZGSettings {
     pub fs: FsFFTSettings,
     pub secret_g1: Vec<FsG1>,
     pub secret_g2: Vec<FsG2>,
+    pub precomputed_values: Option<BGMWPreComputationList>,
 }
 
-impl KZGSettings<FsFr, FsG1, FsG2, FsFFTSettings, FsPoly> for FsKZGSettings {
+#[derive(Debug, Clone)]
+pub struct BGMWPreComputationList(pub Vec<blst_p1_affine>);
+
+impl KZGSettings<FsFr, FsG1, FsG2, FsFFTSettings, FsPoly, BGMWPreComputationList>
+    for FsKZGSettings
+{
     fn new(
         secret_g1: &[FsG1],
         secret_g2: &[FsG2],
         _length: usize,
         fft_settings: &FsFFTSettings,
     ) -> Result<Self, String> {
+        let precomputed_values = {
+            let mut computed = vec![blst_p1_affine::default(); secret_g1.len() * H_BGMW95];
+
+            let mut p_affine = vec![blst_p1_affine::default(); secret_g1.len()];
+            let points = [&secret_g1[0].0, ptr::null()];
+
+            unsafe {
+                blst_p1s_to_affine(p_affine.as_mut_ptr(), points.as_ptr(), secret_g1.len());
+            };
+
+            bgmw::init_pippenger_bgmw(&mut computed, p_affine.as_slice());
+
+            Some(BGMWPreComputationList(computed))
+        };
+
         Ok(Self {
             secret_g1: secret_g1.to_vec(),
             secret_g2: secret_g2.to_vec(),
             fs: fft_settings.clone(),
+            precomputed_values,
         })
     }
 
@@ -40,7 +66,13 @@ impl KZGSettings<FsFr, FsG1, FsG2, FsFFTSettings, FsPoly> for FsKZGSettings {
         }
 
         let mut out = FsG1::default();
-        g1_linear_combination(&mut out, &self.secret_g1, &poly.coeffs, poly.coeffs.len());
+        g1_linear_combination(
+            &mut out,
+            &self.secret_g1,
+            &poly.coeffs,
+            poly.coeffs.len(),
+            self.get_precomputed_values(),
+        );
 
         Ok(out)
     }
@@ -187,5 +219,9 @@ impl KZGSettings<FsFr, FsG1, FsG2, FsFFTSettings, FsPoly> for FsKZGSettings {
 
     fn get_g2_secret(&self) -> &[FsG2] {
         &self.secret_g2
+    }
+
+    fn get_precomputed_values(&self) -> Option<&BGMWPreComputationList> {
+        self.precomputed_values.as_ref()
     }
 }

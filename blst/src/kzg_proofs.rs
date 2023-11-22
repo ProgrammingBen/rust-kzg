@@ -8,6 +8,7 @@ use core::ptr;
 
 #[cfg(feature = "parallel")]
 use crate::mult_pippenger::p1_affines;
+use crate::types::kzg_settings::BGMWPreComputationList;
 #[cfg(not(feature = "parallel"))]
 use blst::{blst_p1s_mult_pippenger_scratch_sizeof, blst_p1s_to_affine, limb_t};
 
@@ -30,7 +31,13 @@ impl PairingVerify<FsG1, FsG2> for FsG1 {
     }
 }
 
-pub fn g1_linear_combination(out: &mut FsG1, points: &[FsG1], scalars: &[FsFr], len: usize) {
+pub fn g1_linear_combination(
+    out: &mut FsG1,
+    points: &[FsG1],
+    scalars: &[FsFr],
+    len: usize,
+    table: Option<&BGMWPreComputationList>,
+) {
     if len < 8 {
         *out = FsG1::default();
         for i in 0..len {
@@ -66,30 +73,15 @@ pub fn g1_linear_combination(out: &mut FsG1, points: &[FsG1], scalars: &[FsFr], 
             scratch = vec![0u8; blst_p1s_mult_pippenger_scratch_sizeof(len)];
         }
 
-        let mut p_affine = vec![blst_p1_affine::default(); len];
-        let mut p_scalars = vec![blst_scalar::default(); len];
-
-        let p_arg: [*const blst_p1; 2] = [&points[0].0, ptr::null()];
-        unsafe {
-            blst_p1s_to_affine(p_affine.as_mut_ptr(), p_arg.as_ptr(), len);
-        }
-
-        for i in 0..len {
-            unsafe { blst_scalar_from_fr(&mut p_scalars[i], &scalars[i].0) };
-        }
-
-        let scalars_arg: [*const blst_scalar; 2] = [p_scalars.as_ptr(), ptr::null()];
-        let points_arg: [*const blst_p1_affine; 2] = [p_affine.as_ptr(), ptr::null()];
-        unsafe {
-            msm(
-                &mut out.0,
-                points_arg.as_ptr(),
-                len,
-                scalars_arg.as_ptr() as *const *const u8,
-                255,
-                scratch.as_mut_ptr() as *mut limb_t,
-            );
-        }
+        msm(
+            out,
+            &points,
+            len,
+            &scalars,
+            255,
+            scratch.as_mut_ptr() as *mut limb_t,
+            table,
+        );
     }
 }
 
@@ -196,7 +188,7 @@ mod test {
 
         let mut res = FsG1::default();
 
-        g1_linear_combination(&mut res, &p, &coeffs, len);
+        g1_linear_combination(&mut res, &p, &coeffs, len, None);
 
         assert!(exp.equals(&res));
     }

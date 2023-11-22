@@ -197,26 +197,33 @@ macro_rules! cfg_into_iter {
 ////////////////////////////// Trait based implementations of functions for EIP-4844 //////////////////////////////
 
 fn poly_to_kzg_commitment<
+    BGMWPreComputationList,
     TFr: Fr,
-    TG1: G1 + G1Mul<TFr>,
+    TG1: G1 + G1Mul<TFr, BGMWPreComputationList>,
     TG2: G2,
     TFFTSettings: FFTSettings<TFr>,
     TPoly: Poly<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
 >(
     p: &TPoly,
     s: &TKZGSettings,
 ) -> TG1 {
-    TG1::g1_lincomb(s.get_g1_secret(), p.get_coeffs(), FIELD_ELEMENTS_PER_BLOB)
+    TG1::g1_lincomb(
+        s.get_g1_secret(),
+        p.get_coeffs(),
+        FIELD_ELEMENTS_PER_BLOB,
+        s.get_precomputed_values(),
+    )
 }
 
 pub fn blob_to_kzg_commitment_rust<
+    BGMWPreComputationList,
     TFr: Fr,
-    TG1: G1 + G1Mul<TFr>,
+    TG1: G1 + G1Mul<TFr, BGMWPreComputationList>,
     TG2: G2,
     TFFTSettings: FFTSettings<TFr>,
     TPoly: Poly<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
 >(
     blob: &[TFr],
     settings: &TKZGSettings,
@@ -291,12 +298,13 @@ fn compute_r_powers<TG1: G1, TFr: Fr>(
 }
 
 fn verify_kzg_proof_batch<
+    BGMWPreComputationList,
     TFr: Fr,
-    TG1: G1 + G1Mul<TFr> + PairingVerify<TG1, TG2>,
+    TG1: G1 + G1Mul<TFr, BGMWPreComputationList> + PairingVerify<TG1, TG2>,
     TG2: G2,
     TFFTSettings: FFTSettings<TFr>,
     TPoly: Poly<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
 >(
     commitments_g1: &[TG1],
     zs_fr: &[TFr],
@@ -312,7 +320,7 @@ fn verify_kzg_proof_batch<
     let r_powers = compute_r_powers(commitments_g1, zs_fr, ys_fr, proofs_g1)?;
 
     // Compute \sum r^i * Proof_i
-    let proof_lincomb = TG1::g1_lincomb(proofs_g1, &r_powers, n);
+    let proof_lincomb = TG1::g1_lincomb(proofs_g1, &r_powers, n, None);
 
     for i in 0..n {
         // Get [y_i]
@@ -324,9 +332,9 @@ fn verify_kzg_proof_batch<
     }
 
     // Get \sum r^i z_i Proof_i
-    let proof_z_lincomb = TG1::g1_lincomb(proofs_g1, &r_times_z, n);
+    let proof_z_lincomb = TG1::g1_lincomb(proofs_g1, &r_times_z, n, None);
     // Get \sum r^i (C_i - [y_i])
-    let mut c_minus_y_lincomb = TG1::g1_lincomb(&c_minus_y, &r_powers, n);
+    let mut c_minus_y_lincomb = TG1::g1_lincomb(&c_minus_y, &r_powers, n, None);
 
     // Get C_minus_y_lincomb + proof_z_lincomb
     let rhs_g1 = c_minus_y_lincomb.add_or_dbl(&proof_z_lincomb);
@@ -341,12 +349,13 @@ fn verify_kzg_proof_batch<
 }
 
 pub fn compute_kzg_proof_rust<
+    BGMWPreComputationList,
     TFr: Fr + Copy,
-    TG1: G1 + G1Mul<TFr>,
+    TG1: G1 + G1Mul<TFr, BGMWPreComputationList>,
     TG2: G2,
     TFFTSettings: FFTSettings<TFr>,
     TPoly: Poly<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
 >(
     blob: &[TFr],
     z: &TFr,
@@ -412,17 +421,23 @@ pub fn compute_kzg_proof_rust<
         }
     }
 
-    let proof = TG1::g1_lincomb(s.get_g1_secret(), q.get_coeffs(), FIELD_ELEMENTS_PER_BLOB);
+    let proof = TG1::g1_lincomb(
+        s.get_g1_secret(),
+        q.get_coeffs(),
+        FIELD_ELEMENTS_PER_BLOB,
+        s.get_precomputed_values(),
+    );
     Ok((proof, y))
 }
 
 pub fn compute_blob_kzg_proof_rust<
+    BGMWPreComputationList,
     TFr: Fr + Copy,
-    TG1: G1 + G1Mul<TFr>,
+    TG1: G1 + G1Mul<TFr, BGMWPreComputationList>,
     TG2: G2,
     TFFTSettings: FFTSettings<TFr>,
     TPoly: Poly<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
 >(
     blob: &[TFr],
     commitment: &TG1,
@@ -433,18 +448,18 @@ pub fn compute_blob_kzg_proof_rust<
     }
 
     let evaluation_challenge_fr = compute_challenge(blob, commitment);
-    let (proof, _) =
-        compute_kzg_proof_rust::<_, _, _, _, _, _>(blob, &evaluation_challenge_fr, ts)?;
+    let (proof, _) = compute_kzg_proof_rust(blob, &evaluation_challenge_fr, ts)?;
     Ok(proof)
 }
 
 pub fn verify_kzg_proof_rust<
+    BGMWPreComputationList,
     TFr: Fr,
     TG1: G1,
     TG2: G2,
     TFFTSettings: FFTSettings<TFr>,
     TPoly: Poly<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
 >(
     commitment: &TG1,
     z: &TFr,
@@ -463,12 +478,13 @@ pub fn verify_kzg_proof_rust<
 }
 
 pub fn verify_blob_kzg_proof_rust<
+    BGMWPreComputationList,
     TFr: Fr + Copy,
     TG1: G1,
     TG2: G2,
     TFFTSettings: FFTSettings<TFr>,
     TPoly: Poly<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
 >(
     blob: &[TFr],
     commitment_g1: &TG1,
@@ -489,12 +505,13 @@ pub fn verify_blob_kzg_proof_rust<
 }
 
 fn compute_challenges_and_evaluate_polynomial<
+    BGMWPreComputationList,
     TFr: Fr + Copy,
     TG1: G1,
     TG2: G2,
     TFFTSettings: FFTSettings<TFr>,
     TPoly: Poly<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
 >(
     blobs: &[Vec<TFr>],
     commitments_g1: &[TG1],
@@ -532,12 +549,13 @@ fn validate_batched_input<TG1: G1>(commitments: &[TG1], proofs: &[TG1]) -> Resul
 }
 
 pub fn verify_blob_kzg_proof_batch_rust<
+    BGMWPreComputationList,
     TFr: Fr + Copy,
-    TG1: G1 + G1Mul<TFr> + PairingVerify<TG1, TG2>,
+    TG1: G1 + G1Mul<TFr, BGMWPreComputationList> + PairingVerify<TG1, TG2>,
     TG2: G2,
     TFFTSettings: FFTSettings<TFr>,
     TPoly: Poly<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly> + Sync,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList> + Sync,
 >(
     blobs: &[Vec<TFr>],
     commitments_g1: &[TG1],
@@ -711,12 +729,13 @@ pub fn blob_to_polynomial<TFr: Fr, TPoly: Poly<TFr>>(blob: &[TFr]) -> Result<TPo
 }
 
 pub fn evaluate_polynomial_in_evaluation_form<
+    BGMWPreComputationList,
     TG1: G1,
     TG2: G2,
     TFr: Fr + Copy,
     TPoly: Poly<TFr>,
     TFFTSettings: FFTSettings<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
 >(
     p: &TPoly,
     x: &TFr,
@@ -776,12 +795,13 @@ fn is_trusted_setup_in_lagrange_form<TG1: G1 + PairingVerify<TG1, TG2>, TG2: G2>
 
 #[allow(clippy::useless_conversion)]
 pub fn load_trusted_setup_rust<
+    BGMWPreComputationList,
     TFr: Fr,
     TG1: G1 + PairingVerify<TG1, TG2>,
     TG2: G2,
     TFFTSettings: FFTSettings<TFr>,
     TPoly: Poly<TFr>,
-    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly>,
+    TKZGSettings: KZGSettings<TFr, TG1, TG2, TFFTSettings, TPoly, BGMWPreComputationList>,
 >(
     g1_bytes: &[u8],
     g2_bytes: &[u8],

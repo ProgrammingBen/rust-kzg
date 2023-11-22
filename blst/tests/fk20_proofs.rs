@@ -7,15 +7,22 @@ mod tests {
     use rust_kzg_blst::types::fr::FsFr;
     use rust_kzg_blst::types::g1::FsG1;
     use rust_kzg_blst::types::g2::FsG2;
-    use rust_kzg_blst::types::kzg_settings::FsKZGSettings;
+    use rust_kzg_blst::types::kzg_settings::{BGMWPreComputationList, FsKZGSettings};
     use rust_kzg_blst::types::poly::FsPoly;
     use rust_kzg_blst::utils::generate_trusted_setup;
 
     #[test]
     fn test_fk_single() {
-        fk_single::<FsFr, FsG1, FsG2, FsPoly, FsFFTSettings, FsKZGSettings, FsFK20SingleSettings>(
-            &generate_trusted_setup,
-        );
+        fk_single::<
+            FsFr,
+            FsG1,
+            FsG2,
+            FsPoly,
+            FsFFTSettings,
+            BGMWPreComputationList,
+            FsKZGSettings,
+            FsFK20SingleSettings,
+        >(&generate_trusted_setup);
     }
 
     #[test]
@@ -26,6 +33,7 @@ mod tests {
             FsG2,
             FsPoly,
             FsFFTSettings,
+            BGMWPreComputationList,
             FsKZGSettings,
             FsFK20SingleSettings,
         >(&generate_trusted_setup);
@@ -39,6 +47,7 @@ mod tests {
             FsG2,
             FsPoly,
             FsFFTSettings,
+            BGMWPreComputationList,
             FsKZGSettings,
             FsFK20MultiSettings,
         >(&generate_trusted_setup);
@@ -52,6 +61,7 @@ mod tests {
             FsG2,
             FsPoly,
             FsFFTSettings,
+            BGMWPreComputationList,
             FsKZGSettings,
             FsFK20MultiSettings,
         >(&generate_trusted_setup);
@@ -65,6 +75,7 @@ mod tests {
             FsG2,
             FsPoly,
             FsFFTSettings,
+            BGMWPreComputationList,
             FsKZGSettings,
             FsFK20MultiSettings,
         >(&generate_trusted_setup);
@@ -78,6 +89,7 @@ mod tests {
             FsG2,
             FsPoly,
             FsFFTSettings,
+            BGMWPreComputationList,
             FsKZGSettings,
             FsFK20MultiSettings,
         >(&generate_trusted_setup);

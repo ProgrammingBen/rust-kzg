@@ -10,6 +10,7 @@ use crate::types::fft_settings::FsFFTSettings;
 use crate::types::fr::FsFr;
 use crate::types::g1::FsG1;
 use crate::types::g2::FsG2;
+use crate::types::kzg_settings::BGMWPreComputationList;
 use crate::types::kzg_settings::FsKZGSettings;
 use crate::types::poly::FsPoly;
 
@@ -19,8 +20,16 @@ pub struct FsFK20SingleSettings {
     pub x_ext_fft: Vec<FsG1>,
 }
 
-impl FK20SingleSettings<FsFr, FsG1, FsG2, FsFFTSettings, FsPoly, FsKZGSettings>
-    for FsFK20SingleSettings
+impl
+    FK20SingleSettings<
+        FsFr,
+        FsG1,
+        FsG2,
+        FsFFTSettings,
+        FsPoly,
+        BGMWPreComputationList,
+        FsKZGSettings,
+    > for FsFK20SingleSettings
 {
     fn new(kzg_settings: &FsKZGSettings, n2: usize) -> Result<Self, String> {
         let n = n2 / 2;

@@ -100,11 +100,16 @@ pub trait G1: Clone + Default + PartialEq + Sync {
     }
 }
 
-pub trait G1Mul<TFr: Fr>: G1 + Clone {
+pub trait G1Mul<TFr: Fr, BGMWPreComputationList>: G1 + Clone {
     fn mul(&self, b: &TFr) -> Self;
 
     // Instead of creating separate trait, keep linear comb here for simplicity
-    fn g1_lincomb(points: &[Self], scalars: &[TFr], len: usize) -> Self;
+    fn g1_lincomb(
+        points: &[Self],
+        scalars: &[TFr],
+        len: usize,
+        precomputed_values: Option<&BGMWPreComputationList>,
+    ) -> Self;
 }
 
 pub trait G2: Clone + Default {
@@ -265,6 +270,7 @@ pub trait KZGSettings<
     Coeff3: G2,
     Fs: FFTSettings<Coeff1>,
     Polynomial: Poly<Coeff1>,
+    BGMWPreComputationList,
 >: Default + Clone
 {
     fn new(
@@ -306,6 +312,8 @@ pub trait KZGSettings<
     fn get_g1_secret(&self) -> &[Coeff2];
 
     fn get_g2_secret(&self) -> &[Coeff3];
+
+    fn get_precomputed_values(&self) -> Option<&BGMWPreComputationList>;
 }
 
 pub trait FK20SingleSettings<
@@ -314,7 +322,8 @@ pub trait FK20SingleSettings<
     Coeff3: G2,
     Fs: FFTSettings<Coeff1>,
     Polynomial: Poly<Coeff1>,
-    Ks: KZGSettings<Coeff1, Coeff2, Coeff3, Fs, Polynomial>,
+    BGMWPreComputationList,
+    Ks: KZGSettings<Coeff1, Coeff2, Coeff3, Fs, Polynomial, BGMWPreComputationList>,
 >: Default + Clone
 {
     fn new(ks: &Ks, n2: usize) -> Result<Self, String>;
@@ -330,7 +339,8 @@ pub trait FK20MultiSettings<
     Coeff3: G2,
     Fs: FFTSettings<Coeff1>,
     Polynomial: Poly<Coeff1>,
-    Ks: KZGSettings<Coeff1, Coeff2, Coeff3, Fs, Polynomial>,
+    BGMWPreComputationList,
+    Ks: KZGSettings<Coeff1, Coeff2, Coeff3, Fs, Polynomial, BGMWPreComputationList>,
 >: Default + Clone
 {
     fn new(ks: &Ks, n2: usize, chunk_len: usize) -> Result<Self, String>;
