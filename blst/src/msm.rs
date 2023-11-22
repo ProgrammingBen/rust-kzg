@@ -4,7 +4,7 @@ extern crate alloc;
 use alloc::vec;
 
 use blst::{
-    blst_fp, blst_p1, blst_p1_add, blst_p1_affine, blst_p1_double, blst_p1_from_affine,
+    blst_fp, blst_fr, blst_p1, blst_p1_add, blst_p1_affine, blst_p1_double, blst_p1_from_affine,
     blst_p1_mult, blst_p1s_mult_wbits, blst_p1s_mult_wbits_precompute, byte, limb_t,
 };
 
@@ -624,6 +624,213 @@ unsafe fn pippenger(
     // // }
     // // POINTonE1s_tile_pippenger(tile, points, npoints, scalars, nbits, buckets, 0, wbits, cbits);
     // // POINTonE1_dadd(ret, ret, tile, NULL);
+}
+
+// static void POINTonE1_bucket_CHES(POINTonE1xyzz buckets[], limb_t booth_idx, const POINTonE1_affine *p, unsigned char booth_sign) { POINTonE1xyzz_dadd_affine(&buckets[booth_idx], &buckets[booth_idx], p, booth_sign); }
+
+unsafe fn p1s_bucket_CHES(
+    buckets: *mut P1XYZZ,
+    booth_idx: limb_t,
+    point: *const blst_p1_affine,
+    booth_sign: u8,
+) {
+    p1_dadd_affine(
+        buckets.wrapping_add(booth_idx.try_into().unwrap()),
+        buckets.wrapping_add(booth_idx.try_into().unwrap()),
+        point,
+        booth_sign.into(),
+    );
+}
+
+unsafe fn bgmw_pippenger_tile(
+    ret: *mut blst_p1,
+    mut points: *const *const blst_p1_affine,
+    mut npoints: usize,
+    mut scalars: *const limb_t,
+    mut booth_signs: *const u8,
+    mut buckets: *mut P1XYZZ,
+    q_exponent: usize,
+) {
+    // POINTonE1 *ret, const POINTonE1_affine *const points[], size_t npoints, const int scalars[], const unsigned char booth_signs[], POINTonE1xyzz buckets[], size_t q_exponent
+
+    // size_t bucket_set_size = (size_t)(1 << (q_exponent - 1)) + 1;
+    let bucket_set_size = (1usize << (q_exponent - 1)) + 1;
+    // vec_zero(buckets, sizeof(buckets[0]) * bucket_set_size);
+    vec_zero(
+        buckets as *mut limb_t,
+        size_of::<P1XYZZ>() * bucket_set_size,
+    );
+    // vec_zero(ret, sizeof(*ret));
+    vec_zero(ret as *mut limb_t, size_of::<blst_p1>());
+    // int booth_idx, booth_idx_nxt;
+    // size_t i;
+    // unsigned char booth_sign;
+    // const POINTonE1_affine *point = *points++;
+    let mut point = *points;
+    points = points.wrapping_add(1);
+    // booth_idx = *scalars++;
+    let mut booth_idx = *scalars;
+    scalars = scalars.wrapping_add(1);
+    // booth_sign = *booth_signs++;
+    let mut booth_sign = *booth_signs;
+    booth_signs = booth_signs.wrapping_add(1);
+    // booth_idx_nxt = *scalars++;
+    let mut booth_idx_nxt = *scalars;
+    scalars = scalars.wrapping_add(1);
+
+    // if (booth_idx)
+    if booth_idx != 0 {
+        // POINTonE1_bucket_CHES(buckets, booth_idx, point, booth_sign);
+        p1s_bucket_CHES(buckets, booth_idx, point, booth_sign);
+    }
+    // --npoints;
+    npoints -= 1;
+    // for (i = 1; i < npoints; ++i)
+    for _i in 1..npoints {
+        // booth_idx = booth_idx_nxt;
+        booth_idx = booth_idx_nxt;
+        // booth_idx_nxt = *scalars++;
+        booth_idx_nxt = *scalars;
+        scalars = scalars.wrapping_add(1);
+
+        // TODO:
+        // POINTonE1_prefetch_CHES(buckets, booth_idx_nxt);
+
+        // point = *points++;
+        point = *points;
+        points = points.wrapping_add(1);
+        // booth_sign = *booth_signs++;
+        booth_sign = *booth_signs;
+        booth_signs = booth_signs.wrapping_add(1);
+        // if (booth_idx)
+        if booth_idx != 0 {
+            // POINTonE1_bucket_CHES(buckets, booth_idx, point, booth_sign);
+            p1s_bucket_CHES(buckets, booth_idx, point, booth_sign);
+        }
+    }
+    // point = *points;
+    point = *points;
+    // booth_sign = *booth_signs;
+    booth_sign = *booth_signs;
+    // POINTonE1_bucket_CHES(buckets, booth_idx_nxt, point, booth_sign);
+    p1s_bucket_CHES(buckets, booth_idx_nxt, point, booth_sign);
+
+    // ++buckets;
+    buckets = buckets.wrapping_add(1);
+
+    // POINTonE1_integrate_buckets(ret, buckets, q_exponent - 1);
+    p1_integrate_buckets(ret, buckets, q_exponent - 1);
+}
+
+unsafe fn bgmw(ret: *mut blst_p1, npoints: usize, scalars: *const *const byte) {
+    // std::array< int, h_BGMW95> ret_qhalf_expr;
+
+    // uint64_t npoints = N_POINTS*h_BGMW95;
+
+    // int* scalars;
+    // scalars = new int [npoints];
+
+    // unsigned char* booth_signs; // it acts as a bool type
+    // booth_signs = new unsigned char [npoints];
+
+    // blst_p1_affine** points_ptr;
+    // points_ptr = new blst_p1_affine* [npoints];
+
+    // FIXME: this formula only works when npoints is power of two
+    let n_exp = npoints.leading_zeros();
+    // // This is only for BLS12-381 curve
+    // if (N_EXP == 13 || N_EXP == 14 || N_EXP == 16 || N_EXP == 17){
+    if n_exp == 13 || n_exp == 14 || n_exp == 16 || n_exp == 17 {
+        // uint64_t  tt = uint64_t(1) << 62;
+        let tt: u64 = 1u64 << 62;
+
+        // for(int i = 0; i< N_POINTS; ++i){
+        for i in 0..npoints {
+            // uint256_t aa = scalars_array[i];
+            let aa = scalars;
+
+            // bool condition =  (aa.data[3] > tt); // a > 0.5*q*q**(h-1)
+            // if (condition == true) {
+            //     aa = r_GROUP_ORDER - aa;
+            // }
+
+            // trans_uint256_t_to_qhalf_expr(ret_qhalf_expr, aa);
+
+            // if (condition == true) {
+            //     for(int j = 0; j< h_BGMW95; ++j){
+            //         size_t idx = i*h_BGMW95 + j;
+            //         scalars[idx]  = ret_qhalf_expr[j];
+            //         points_ptr[idx] =  PRECOMPUTATION_POINTS_LIST_BGMW95 + idx;
+
+            //         if ( scalars[idx] > 0) {
+            //             booth_signs[idx] = 1;
+            //         }
+            //         else{
+            //             scalars[idx] = - scalars[idx];
+            //             booth_signs[idx] = 0;
+            //         }
+            //     }
+            // }
+            // else{
+            //     for(int j = 0; j< h_BGMW95; ++j){
+            //         size_t idx = i*h_BGMW95 + j;
+            //         scalars[idx]  = ret_qhalf_expr[j];
+            //         points_ptr[idx] =  PRECOMPUTATION_POINTS_LIST_BGMW95 + idx;
+
+            //         if ( scalars[idx] > 0) {
+            //             booth_signs[idx] = 0;
+            //         }
+            //         else{
+            //             scalars[idx] = - scalars[idx];
+            //             booth_signs[idx] = 1;
+            //         }
+            //     }
+            // }
+        }
+
+        // }
+    }
+
+    // }
+    // else{
+    //     for(int i = 0; i< N_POINTS; ++i){
+    //         trans_uint256_t_to_qhalf_expr(ret_qhalf_expr, scalars_array[i]);
+
+    //         for(int j = 0; j< h_BGMW95; ++j){
+    //             size_t idx = i*h_BGMW95 + j;
+    //             scalars[idx]  = ret_qhalf_expr[j];
+    //             points_ptr[idx] =  PRECOMPUTATION_POINTS_LIST_BGMW95 + idx;
+    //             if ( scalars[idx] > 0) {
+    //                 booth_signs[idx] = 0;
+    //             }
+    //             else{
+    //                 scalars[idx] = -scalars[idx];
+    //                 booth_signs[idx] = 1;
+    //             }
+    //         }
+    //     }
+    // }
+
+    // blst_p1 ret; // Mont coordinates
+
+    // blst_p1xyzz* buckets;
+    // int qhalf = int(q_RADIX_PIPPENGER_VARIANT>>1);
+    // buckets = new blst_p1xyzz [qhalf + 1];
+
+    // blst_p1_tile_pippenger_BGMW95(&ret, \
+    //                                 points_ptr, \
+    //                                 npoints, \
+    //                                 scalars, booth_signs,\
+    //                                 buckets,\
+    //                                 EXPONENT_OF_q_BGMW95);
+    // delete[] buckets;
+    // delete[] points_ptr;
+    // delete[] booth_signs;
+    // delete[] scalars;
+
+    // blst_p1_affine res_affine;
+    // blst_p1_to_affine( &res_affine, &ret);
+    // return res_affine;
 }
 
 #[allow(unused)]

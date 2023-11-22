@@ -1,8 +1,10 @@
-use blst::{blst_p1_affine, blst_p1_generator, blst_p1_double, blst_p1_to_affine, blst_p1, blst_fp, blst_p1_from_affine, blst_p1_add_or_double};
-
+use blst::{
+    blst_fp, blst_p1, blst_p1_add_or_double, blst_p1_affine, blst_p1_double, blst_p1_from_affine,
+    blst_p1_generator, blst_p1_to_affine,
+};
 
 pub const N_EXP: usize = 10;
-pub const N_POINTS : usize = 1 << N_EXP;
+pub const N_POINTS: usize = 1 << N_EXP;
 pub const H_BGMW95: usize = 22;
 pub const H_LEN_SCALAR: usize = 20;
 pub const EXPONENT_OF_Q: usize = 13;
@@ -31,7 +33,7 @@ pub const Q_RADIX_PIPPENGER_VARIANT: usize = 1 << EXPONENT_OF_Q_BGMW95;
 //             }
 
 //             trans_uint
-//         } 
+//         }
 
 //         }
 //     }
@@ -41,11 +43,21 @@ pub const Q_RADIX_PIPPENGER_VARIANT: usize = 1 << EXPONENT_OF_Q_BGMW95;
 
 // }
 
-pub fn single_scalar_multiplication(mut scalar: usize, q: blst_p1_affine) -> blst_p1_affine{
+pub fn single_scalar_multiplication(mut scalar: usize, q: blst_p1_affine) -> blst_p1_affine {
     let mut ret: blst_p1_affine = blst_p1_affine::default();
-    let mut inf: blst_p1 = blst_p1 { x: blst_fp {l: [0,1,0,0,0,0]}, y: blst_fp {l: [0,0,0,0,0,0]}, z: blst_fp {l: [0,0,0,0,0,0]} };
+    let mut inf: blst_p1 = blst_p1 {
+        x: blst_fp {
+            l: [0, 1, 0, 0, 0, 0],
+        },
+        y: blst_fp {
+            l: [0, 0, 0, 0, 0, 0],
+        },
+        z: blst_fp {
+            l: [0, 0, 0, 0, 0, 0],
+        },
+    };
     let mut xyz_q: blst_p1 = blst_p1::default();
-    unsafe { 
+    unsafe {
         blst_p1_from_affine(&mut xyz_q, &q);
         while scalar > 0 {
             if scalar & 1 != 0 {
@@ -60,63 +72,49 @@ pub fn single_scalar_multiplication(mut scalar: usize, q: blst_p1_affine) -> bls
     };
 }
 
-
-
-pub fn init_pippenger_bgmw() -> Vec<blst_p1_affine>{
-    // fix point list
-    let mut fix_points_list = vec![blst_p1_affine::default(); N_POINTS];
-    let mut blst_p1;
-    unsafe {
-        blst_p1 = *blst_p1_generator();
-    }
-    let mut tmp_p_affine: blst_p1_affine = blst_p1_affine::default();
-    unsafe {
-        for i in 0..N_POINTS{
-            let blst_p1_tmp = blst_p1;
-            blst_p1_double(&mut blst_p1, &blst_p1_tmp);
-            blst_p1_to_affine(&mut tmp_p_affine, &blst_p1);
-            fix_points_list[i] = tmp_p_affine;
-        }
-    }
-
-    // 3nh list
-    let mut precomputation_points_list_3nh = vec![blst_p1_affine::default(); 3*N_POINTS*H_LEN_SCALAR];
-
-    for i in 0..N_POINTS{
-        tmp_p_affine = fix_points_list[i];
-        for j in 0..H_LEN_SCALAR{
-            for m in 1..3{
-                let idx_i_j_m: usize = 3*(i*H_LEN_SCALAR + j) + m - 1;
-                if m == 1 {
-                    precomputation_points_list_3nh[idx_i_j_m] = tmp_p_affine;
-                }
-                else {
-                    precomputation_points_list_3nh[idx_i_j_m] = single_scalar_multiplication(m, tmp_p_affine);
-                }
-                tmp_p_affine = single_scalar_multiplication(Q_RADIX, tmp_p_affine);
-            }
-        }
-    }
-
-
+pub fn init_pippenger_bgmw(
+    table: &mut [blst_p1_affine],
+    points: &[blst_p1_affine],
+) -> Vec<blst_p1_affine> {
     // bmw95 list
-    let mut precomputation_points_list_bgmw95 = vec![blst_p1_affine::default(); H_BGMW95*N_POINTS];
-    
+    let mut precomputation_points_list_bgmw95 =
+        vec![blst_p1_affine::default(); H_BGMW95 * N_POINTS];
+
     if Q_RADIX == Q_RADIX_PIPPENGER_VARIANT {
-        for i in 0..N_POINTS{
-            for j in 0..H_BGMW95{
-                let idx = i * H_BGMW95 + j;
-                precomputation_points_list_bgmw95[idx] = precomputation_points_list_3nh[3*idx];
+        // 3nh list
+        let mut precomputation_points_list_3nh =
+            vec![blst_p1_affine::default(); 3 * N_POINTS * H_LEN_SCALAR];
+
+        for i in 0..points.len() {
+            let mut tmp_p_affine = points[i];
+            for j in 0..H_LEN_SCALAR {
+                for m in 1..3 {
+                    let idx_i_j_m: usize = 3 * (i * H_LEN_SCALAR + j) + m - 1;
+                    if m == 1 {
+                        precomputation_points_list_3nh[idx_i_j_m] = tmp_p_affine;
+                    } else {
+                        precomputation_points_list_3nh[idx_i_j_m] =
+                            single_scalar_multiplication(m, tmp_p_affine);
+                    }
+                    tmp_p_affine = single_scalar_multiplication(Q_RADIX, tmp_p_affine);
+                }
             }
         }
-    }
-    else{
-        for i in 0..N_POINTS{
-            tmp_p_affine = fix_points_list[i];
-            for j in 0..H_BGMW95{
+
+        for i in 0..N_POINTS {
+            for j in 0..H_BGMW95 {
+                let idx = i * H_BGMW95 + j;
+                precomputation_points_list_bgmw95[idx] = precomputation_points_list_3nh[3 * idx];
+            }
+        }
+    } else {
+        for i in 0..N_POINTS {
+            let mut tmp_p_affine = points[i];
+            for j in 0..H_BGMW95 {
                 let idx = i * H_BGMW95 + j;
                 precomputation_points_list_bgmw95[idx] = tmp_p_affine;
-                tmp_p_affine = single_scalar_multiplication(Q_RADIX_PIPPENGER_VARIANT, tmp_p_affine);
+                tmp_p_affine =
+                    single_scalar_multiplication(Q_RADIX_PIPPENGER_VARIANT, tmp_p_affine);
             }
         }
     }
