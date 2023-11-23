@@ -1,6 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-mod bgmw;
+pub mod bgmw;
 pub mod consts;
 pub mod data_availability_sampling;
 pub mod eip_4844;
