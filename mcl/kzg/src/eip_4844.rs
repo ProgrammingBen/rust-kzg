@@ -101,7 +101,7 @@ pub fn load_trusted_setup(filepath: &str) -> KZGSettings {
     file.read_to_string(&mut contents)
         .expect("Unable to read file");
 
-    let (g1_bytes, g2_bytes) = load_trusted_setup_string(&contents);
+    let Ok((g1_bytes, g2_bytes)) = load_trusted_setup_string(&contents);
     load_trusted_setup_from_bytes(g1_bytes.as_slice(), g2_bytes.as_slice())
 }
 

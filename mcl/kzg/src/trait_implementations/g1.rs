@@ -99,4 +99,8 @@ impl G1Mul<Fr> for G1 {
         G1::mul(&mut g1, self, b);
         g1
     }
+
+    fn g1_lincomb(points: &[Self], scalars: &[Fr], len: usize) -> Self {
+        G1::g1_lincomb(points, scalars, len)
+    }
 }

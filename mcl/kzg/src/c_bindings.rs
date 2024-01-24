@@ -1,9 +1,10 @@
 use crate::data_types::{fp::*, fr::*, g2::*};
 use crate::fk20_fft::FFTSettings as mFFTSettings;
 use crate::kzg_settings::KZGSettings as mKZGSettings;
+use blst::blst_fr;
 use kzg::cfg_into_iter;
 use kzg::eip_4844::{
-    blst_p1, load_trusted_setup_string, Blob, Bytes32, Bytes48, CFFTSettings, CKZGSettings,
+    blst_p1, load_trusted_setup_string, Blob, Bytes32, Bytes48, CKZGSettings,
     KZGCommitment, KZGProof, BYTES_PER_FIELD_ELEMENT, BYTES_PER_G1, BYTES_PER_G2, C_KZG_RET,
     C_KZG_RET_BADARGS, C_KZG_RET_OK,
 };
@@ -28,20 +29,25 @@ unsafe fn ks_to_cks(t: &mut mKZGSettings, out: *mut CKZGSettings) {
     assert_eq!(t.curve.g1_points.len(), t.fft_settings.max_width);
     (*out).g1_values = t.curve.g1_points.as_mut_ptr() as _;
     (*out).g2_values = t.curve.g2_points.as_mut_ptr() as _;
-    let fs = CFFTSettings {
-        max_width: t.fft_settings.max_width as _,
-        roots_of_unity: t.fft_settings.expanded_roots_of_unity.as_mut_ptr() as _,
-        expanded_roots_of_unity: t.fft_settings.expanded_roots_of_unity.as_mut_ptr() as _,
-        reverse_roots_of_unity: t.fft_settings.reverse_roots_of_unity.as_mut_ptr() as _,
-    };
-    let b = Box::new(fs);
-    (*out).fs = Box::into_raw(b);
+    // let fs = FFTSettings {
+    //     max_width: t.fft_settings.max_width as _,
+    //     roots_of_unity: t.fft_settings.expanded_roots_of_unity.as_mut_ptr() as _,
+    //     expanded_roots_of_unity: t.fft_settings.expanded_roots_of_unity.as_mut_ptr() as _,
+    //     reverse_roots_of_unity: t.fft_settings.reverse_roots_of_unity.as_mut_ptr() as _,
+    // };
+    // let b = Box::new(fs);
+    (*out).max_width = t.fft_settings.max_width as u64;
+    let mut roots_of_unity: Vec<blst_fr> = Vec::new();
+    for root_of_unity in t.fft_settings.roots_of_unity{
+        roots_of_unity.push((blst_fr { l: root_of_unity.d }));
+    }
+    (*out).roots_of_unity = roots_of_unity.as_mut_ptr();
 }
 
 unsafe fn cks_to_ks(t: *const CKZGSettings) -> mKZGSettings {
     crate::fk20_fft::init_globals();
-    let fs = (*t).fs;
-    let mw = (*fs).max_width as usize;
+    let fs = (*t);
+    let mw = fs.max_width as usize;
     let mut ks = mKZGSettings {
         curve: crate::kzg10::Curve {
             g1_gen: G1::gen(),
@@ -52,17 +58,9 @@ unsafe fn cks_to_ks(t: *const CKZGSettings) -> mKZGSettings {
         fft_settings: mFFTSettings {
             max_width: mw,
             root_of_unity: Fr::default(),
-            expanded_roots_of_unity: Vec::from_raw_parts(
-                (*fs).expanded_roots_of_unity as _,
-                mw + 1,
-                mw + 1,
-            ),
-            reverse_roots_of_unity: Vec::from_raw_parts(
-                (*fs).reverse_roots_of_unity as _,
-                mw + 1,
-                mw + 1,
-            ),
-            roots_of_unity: Vec::from_raw_parts((*fs).roots_of_unity as _, mw + 1, mw + 1),
+            roots_of_unity: Vec::from_raw_parts(fs.roots_of_unity as _, mw + 1, mw + 1),
+            expanded_roots_of_unity: todo!(),
+            reverse_roots_of_unity: todo!(),
         },
     };
     ks.fft_settings.root_of_unity = ks.fft_settings.expanded_roots_of_unity[1];
@@ -133,7 +131,7 @@ pub unsafe extern "C" fn load_trusted_setup_file(
     let len: usize = libc::fread(buf.as_mut_ptr() as *mut libc::c_void, 1, buf.len(), in_);
     let s = String::from_utf8(buf[..len].to_vec()).unwrap();
 
-    let (g1_bytes, g2_bytes) = load_trusted_setup_string(&s);
+    let Ok((g1_bytes, g2_bytes)) = load_trusted_setup_string(&s);
     let mut mks =
         crate::eip_4844::load_trusted_setup_from_bytes(g1_bytes.as_slice(), g2_bytes.as_slice());
     ks_to_cks(&mut mks, out);
@@ -147,7 +145,7 @@ pub unsafe extern "C" fn load_trusted_setup_file(
 pub unsafe extern "C" fn free_trusted_setup(s: *mut CKZGSettings) {
     assert!(crate::mcl_methods::init(crate::CurveType::BLS12_381));
     drop(cks_to_ks(s));
-    let fs = Box::from_raw((*s).fs as *mut CFFTSettings);
+    let fs = Box::from_raw(&mut (*s) as _);
     drop(fs);
 }
 
