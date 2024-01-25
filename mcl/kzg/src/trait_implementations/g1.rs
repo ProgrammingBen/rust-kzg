@@ -1,9 +1,10 @@
 use crate::data_types::g1::{g1_linear_combination, is_valid_order};
-use crate::data_types::{fr::Fr, g1::G1};
+use crate::data_types::{fr::Fr, g1::G1, fp::Fp, fp2::Fp2};
 use crate::fk20_fft::{G1_GENERATOR, G1_NEGATIVE_GENERATOR};
 use crate::mcl_methods::set_eth_serialization;
 use kzg::eip_4844::BYTES_PER_G1;
-use kzg::{G1Mul, G1 as CommonG1};
+use kzg::{G1Mul, G1 as CommonG1, G1LinComb};
+use kzg::msm::precompute::PrecomputationTable;
 
 impl CommonG1 for G1 {
     fn identity() -> Self {
@@ -91,6 +92,38 @@ impl CommonG1 for G1 {
     fn equals(&self, b: &Self) -> bool {
         kzg::G1::eq(self, b)
     }
+
+    const ZERO: Self = Self {
+            x: Fp::from([
+                8505329371266088957,
+                17002214543764226050,
+                6865905132761471162,
+                8632934651105793861,
+                6631298214892334189,
+                1582556514881692819,
+            ]),
+            y: Fp::from([
+                8505329371266088957,
+                17002214543764226050,
+                6865905132761471162,
+                8632934651105793861,
+                6631298214892334189,
+                1582556514881692819,
+            ]),
+            z: Fp::from([0, 0, 0, 0, 0, 0]),
+        };
+
+    fn add_or_dbl_assign(&mut self, b: &Self) {
+        self.add_or_dbl(b)
+    }
+
+    fn add_assign(&mut self, b: &Self) {
+        self.add(b)
+    }
+
+    fn dbl_assign(&mut self) {
+        self.dbl()
+    }
 }
 
 impl G1Mul<Fr> for G1 {
@@ -99,8 +132,10 @@ impl G1Mul<Fr> for G1 {
         G1::mul(&mut g1, self, b);
         g1
     }
+}
 
-    fn g1_lincomb(points: &[Self], scalars: &[Fr], len: usize) -> Self {
+impl G1LinComb<Fr, Fp, Fp2> for G1 {
+    fn g1_lincomb(points: &[Self], scalars: &[Fr], len: usize, precomputation: Option<&PrecomputationTable<Fr, Self, Fp, Fp2>>) -> Self {
         let mut result: G1 = G1::default();
         g1_linear_combination(&mut result, points, scalars, len);
         result

@@ -1,11 +1,11 @@
-use crate::data_types::{fr::Fr, g1::G1, g2::G2};
+use crate::data_types::{fr::Fr, g1::G1, g2::G2, fp::Fp, fp2::Fp2};
 use crate::fk20_fft::FFTSettings;
 use crate::fk20_matrix::{FK20Matrix, FK20SingleMatrix};
 use crate::kzg10::Polynomial;
 use crate::kzg_settings::KZGSettings;
 use kzg::{FK20MultiSettings, FK20SingleSettings};
 
-impl FK20SingleSettings<Fr, G1, G2, FFTSettings, Polynomial, KZGSettings> for FK20SingleMatrix {
+impl FK20SingleSettings<Fr, G1, G2, FFTSettings, Polynomial, KZGSettings, Fp, Fp2> for FK20SingleMatrix {
     fn new(ks: &KZGSettings, n2: usize) -> Result<Self, String> {
         FK20SingleMatrix::new(ks, n2)
     }
@@ -19,7 +19,7 @@ impl FK20SingleSettings<Fr, G1, G2, FFTSettings, Polynomial, KZGSettings> for FK
     }
 }
 
-impl FK20MultiSettings<Fr, G1, G2, FFTSettings, Polynomial, KZGSettings> for FK20Matrix {
+impl FK20MultiSettings<Fr, G1, G2, FFTSettings, Polynomial, KZGSettings, Fp, Fp2> for FK20Matrix {
     fn new(ks: &KZGSettings, n2: usize, chunk_len: usize) -> Result<Self, String> {
         FK20Matrix::new(ks, n2, chunk_len)
     }

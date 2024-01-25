@@ -1,10 +1,10 @@
-use crate::data_types::{fr::Fr, g1::G1, g2::G2};
+use crate::data_types::{fr::Fr, g1::G1, g2::G2, fp::Fp, fp2::Fp2};
 use crate::fk20_fft::FFTSettings;
 use crate::kzg10::Polynomial;
 use crate::kzg_settings::KZGSettings;
 use kzg::KZGSettings as CommonKZGSettings;
 
-impl CommonKZGSettings<Fr, G1, G2, FFTSettings, Polynomial> for KZGSettings {
+impl CommonKZGSettings<Fr, G1, G2, FFTSettings, Polynomial, Fp, Fp2> for KZGSettings {
     fn new(
         secret_g1: &[G1],
         secret_g2: &[G2],
