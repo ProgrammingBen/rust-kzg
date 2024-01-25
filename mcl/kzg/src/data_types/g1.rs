@@ -6,6 +6,7 @@ use crate::utilities::arr64_6_to_g1_sum;
 use kzg::G1 as _;
 use std::ops::{Add, AddAssign};
 use std::ops::{Sub, SubAssign};
+use core::mem::MaybeUninit;
 use std::os::raw::c_int;
 
 #[cfg(feature = "parallel")]

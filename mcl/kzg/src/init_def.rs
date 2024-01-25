@@ -9,6 +9,11 @@ macro_rules! common_impl {
             pub fn zero() -> $t {
                 Default::default()
             }
+            pub unsafe fn uninit() -> $t {
+                let u = MaybeUninit::<$t>::uninit();
+                let v = unsafe { u.assume_init() };
+                v
+            }
             pub fn clear(&mut self) {
                 *self = <$t>::zero()
             }
@@ -66,7 +71,7 @@ macro_rules! str_impl {
     ($t:ty, $maxBufSize:expr, $get_str_fn:ident, $set_str_fn:ident) => {
         impl $t {
             pub fn from_str(s: &str, base: i32) -> Option<$t> {
-                let mut v = <$t>::zero();
+                let mut v = unsafe { <$t>::uninit() };
                 if v.set_str(s, base) {
                     return Some(v);
                 }

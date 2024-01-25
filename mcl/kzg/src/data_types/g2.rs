@@ -4,6 +4,7 @@ use crate::data_types::fr::Fr;
 use crate::mcl_methods;
 use std::ops::{Add, AddAssign};
 use std::ops::{Sub, SubAssign};
+use core::mem::MaybeUninit;
 use std::os::raw::c_int;
 
 #[allow(non_snake_case)]
