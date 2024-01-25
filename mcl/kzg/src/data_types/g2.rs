@@ -6,9 +6,6 @@ use std::ops::{Add, AddAssign};
 use std::ops::{Sub, SubAssign};
 use std::os::raw::c_int;
 
-#[link(name = "mcl", kind = "static")]
-#[link(name = "mclbn384_256", kind = "static")]
-#[link(name = "stdc++")]
 #[allow(non_snake_case)]
 extern "C" {
     fn mclBnG2_isEqual(x: *const G2, y: *const G2) -> i32;

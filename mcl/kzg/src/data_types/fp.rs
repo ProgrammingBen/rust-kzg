@@ -5,9 +5,7 @@ use std::ops::{Mul, MulAssign};
 use std::ops::{Sub, SubAssign};
 use std::os::raw::c_int;
 
-#[link(name = "mcl", kind = "static")]
-#[link(name = "mclbn384_256", kind = "static")]
-#[link(name = "stdc++")]
+
 #[allow(non_snake_case)]
 extern "C" {
     fn mclBnFp_isEqual(x: *const Fp, y: *const Fp) -> i32;

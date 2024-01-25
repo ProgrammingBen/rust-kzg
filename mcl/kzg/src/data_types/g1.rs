@@ -11,9 +11,6 @@ use std::os::raw::c_int;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-#[link(name = "mcl", kind = "static")]
-#[link(name = "mclbn384_256", kind = "static")]
-#[link(name = "stdc++")]
 #[allow(non_snake_case)]
 extern "C" {
     pub fn mclBnG1_isEqual(x: *const G1, y: *const G1) -> i32;

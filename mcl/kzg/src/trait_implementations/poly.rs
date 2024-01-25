@@ -1,13 +1,14 @@
 use crate::data_types::fr::Fr;
 use crate::fk20_fft::FFTSettings;
+use crate::kzg10;
 use crate::kzg10::Polynomial;
 use kzg::FFTSettingsPoly;
 use kzg::Poly;
 use kzg::PolyRecover;
 
 impl Poly<Fr> for Polynomial {
-    fn new(size: usize) -> Result<Self, String> {
-        Ok(Polynomial::new(size))
+    fn new(size: usize) -> kzg10::Polynomial {
+        Polynomial::new(size)
     }
 
     fn get_coeff_at(&self, i: usize) -> Fr {

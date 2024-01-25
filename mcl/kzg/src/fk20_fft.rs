@@ -264,7 +264,7 @@ impl FFTSettings {
 
         // Permute the roots of unity
         let mut roots_of_unity = expanded_roots_of_unity.clone();
-        reverse_bit_order(&mut roots_of_unity);
+        reverse_bit_order(&mut roots_of_unity).unwrap();
 
         FFTSettings {
             max_width: 1 << max_scale,

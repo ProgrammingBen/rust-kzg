@@ -38,15 +38,15 @@ unsafe fn ks_to_cks(t: &mut mKZGSettings, out: *mut CKZGSettings) {
     // let b = Box::new(fs);
     (*out).max_width = t.fft_settings.max_width as u64;
     let mut roots_of_unity: Vec<blst_fr> = Vec::new();
-    for root_of_unity in t.fft_settings.roots_of_unity{
-        roots_of_unity.push((blst_fr { l: root_of_unity.d }));
+    for root_of_unity in &t.fft_settings.roots_of_unity{
+        roots_of_unity.push(blst_fr { l: root_of_unity.d });
     }
     (*out).roots_of_unity = roots_of_unity.as_mut_ptr();
 }
 
 unsafe fn cks_to_ks(t: *const CKZGSettings) -> mKZGSettings {
     crate::fk20_fft::init_globals();
-    let fs = (*t);
+    let fs = &(*t);
     let mw = fs.max_width as usize;
     let mut ks = mKZGSettings {
         curve: crate::kzg10::Curve {
@@ -59,8 +59,8 @@ unsafe fn cks_to_ks(t: *const CKZGSettings) -> mKZGSettings {
             max_width: mw,
             root_of_unity: Fr::default(),
             roots_of_unity: Vec::from_raw_parts(fs.roots_of_unity as _, mw + 1, mw + 1),
-            expanded_roots_of_unity: todo!(),
-            reverse_roots_of_unity: todo!(),
+            expanded_roots_of_unity: Vec::from_raw_parts(fs.roots_of_unity as _, mw + 1, mw + 1),
+            reverse_roots_of_unity: Vec::from_raw_parts(fs.roots_of_unity as _, mw + 1, mw + 1),
         },
     };
     ks.fft_settings.root_of_unity = ks.fft_settings.expanded_roots_of_unity[1];
@@ -131,7 +131,9 @@ pub unsafe extern "C" fn load_trusted_setup_file(
     let len: usize = libc::fread(buf.as_mut_ptr() as *mut libc::c_void, 1, buf.len(), in_);
     let s = String::from_utf8(buf[..len].to_vec()).unwrap();
 
-    let Ok((g1_bytes, g2_bytes)) = load_trusted_setup_string(&s);
+    let Ok((g1_bytes, g2_bytes)) = load_trusted_setup_string(&s) else {
+        panic!("Failed to load trusted setup")
+    };
     let mut mks =
         crate::eip_4844::load_trusted_setup_from_bytes(g1_bytes.as_slice(), g2_bytes.as_slice());
     ks_to_cks(&mut mks, out);
@@ -288,7 +290,7 @@ pub unsafe extern "C" fn blob_to_kzg_commitment(
         return deserialized_blob.err().unwrap();
     }
     let ms = cks_to_ks(s);
-    let tmp = crate::eip_4844::blob_to_kzg_commitment(&deserialized_blob.unwrap(), &ms);
+    let tmp = crate::eip_4844::blob_to_kzg_commitment(&deserialized_blob.unwrap(), &ms).unwrap();
     (*out).bytes = G1::to_bytes(&tmp);
     std::mem::forget(ms);
 
@@ -355,7 +357,7 @@ pub unsafe extern "C" fn compute_kzg_proof(
     }
     let ms = cks_to_ks(s);
     let (proof_out_tmp, fry_tmp) =
-        crate::eip_4844::compute_kzg_proof(&deserialized_blob.unwrap(), &frz.unwrap(), &ms);
+        crate::eip_4844::compute_kzg_proof(&deserialized_blob.unwrap(), &frz.unwrap(), &ms).unwrap();
     (*proof_out).bytes = G1::to_bytes(&proof_out_tmp);
     (*y_out).bytes = Fr::to_bytes(&fry_tmp);
     std::mem::forget(ms);

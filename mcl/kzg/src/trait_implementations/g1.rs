@@ -1,4 +1,4 @@
-use crate::data_types::g1::is_valid_order;
+use crate::data_types::g1::{g1_linear_combination, is_valid_order};
 use crate::data_types::{fr::Fr, g1::G1};
 use crate::fk20_fft::{G1_GENERATOR, G1_NEGATIVE_GENERATOR};
 use crate::mcl_methods::set_eth_serialization;
@@ -63,7 +63,7 @@ impl CommonG1 for G1 {
     }
 
     fn is_inf(&self) -> bool {
-        G1::eq(self, &G1::G1_IDENTITY)
+        kzg::G1::eq(self, &G1::G1_IDENTITY)
     }
 
     fn is_valid(&self) -> bool {
@@ -89,7 +89,7 @@ impl CommonG1 for G1 {
     }
 
     fn equals(&self, b: &Self) -> bool {
-        G1::eq(self, b)
+        kzg::G1::eq(self, b)
     }
 }
 
@@ -101,6 +101,8 @@ impl G1Mul<Fr> for G1 {
     }
 
     fn g1_lincomb(points: &[Self], scalars: &[Fr], len: usize) -> Self {
-        G1::g1_lincomb(points, scalars, len)
+        let mut result: G1 = G1::default();
+        g1_linear_combination(&mut result, points, scalars, len);
+        result
     }
 }

@@ -113,6 +113,6 @@ impl CommonFr for Fr {
     }
 
     fn equals(&self, b: &Self) -> bool {
-        Fr::eq(self, b)
+        kzg::Fr::eq(self, b)
     }
 }

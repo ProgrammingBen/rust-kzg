@@ -82,7 +82,7 @@ pub fn load_trusted_setup_from_bytes(g1_bytes: &[u8], g2_bytes: &[u8]) -> KZGSet
 
     let fs = FFTSettings::new(max_scale as u8);
     let mut g1_values = fs.fft_g1_inv(&g1_projectives).unwrap();
-    reverse_bit_order(&mut g1_values);
+    reverse_bit_order(&mut g1_values).unwrap();
 
     KZGSettings {
         fft_settings: fs,
@@ -95,14 +95,16 @@ pub fn load_trusted_setup_from_bytes(g1_bytes: &[u8], g2_bytes: &[u8]) -> KZGSet
     }
 }
 
-pub fn load_trusted_setup(filepath: &str) -> KZGSettings {
+pub fn load_trusted_setup(filepath: &str) -> Result<KZGSettings, String> {
     let mut file = File::open(filepath).expect("Unable to open file");
     let mut contents = String::new();
     file.read_to_string(&mut contents)
         .expect("Unable to read file");
 
-    let Ok((g1_bytes, g2_bytes)) = load_trusted_setup_string(&contents);
-    load_trusted_setup_from_bytes(g1_bytes.as_slice(), g2_bytes.as_slice())
+    let Ok((g1_bytes, g2_bytes)) = load_trusted_setup_string(&contents) else {
+        panic!("Failed to load trusted setup")
+    };
+    Ok(load_trusted_setup_from_bytes(g1_bytes.as_slice(), g2_bytes.as_slice()))
 }
 
 fn g1_lincomb(points: &[G1], scalars: &[Fr], length: usize) -> G1 {
@@ -111,9 +113,9 @@ fn g1_lincomb(points: &[G1], scalars: &[Fr], length: usize) -> G1 {
     out
 }
 
-pub fn blob_to_kzg_commitment(blob: &[Fr], s: &KZGSettings) -> G1 {
-    let p = blob_to_polynomial(blob);
-    poly_to_kzg_commitment(&p, s)
+pub fn blob_to_kzg_commitment(blob: &[Fr], s: &KZGSettings) -> Result<G1, String> {
+    let p = blob_to_polynomial(blob).unwrap();
+    Ok(poly_to_kzg_commitment(&p, s))
 }
 
 pub fn verify_kzg_proof(
@@ -171,11 +173,11 @@ pub fn verify_kzg_proof_batch(
     Curve::verify_pairing(&proof_lincomb, &ts.curve.g2_points[1], &rhs_g1, &G2::gen())
 }
 
-pub fn compute_kzg_proof(blob: &[Fr], z: &Fr, s: &KZGSettings) -> (G1, Fr) {
+pub fn compute_kzg_proof(blob: &[Fr], z: &Fr, s: &KZGSettings) -> Result<(G1, Fr), String> {
     assert_eq!(blob.len(), FIELD_ELEMENTS_PER_BLOB);
 
-    let polynomial = blob_to_polynomial(blob);
-    let y = evaluate_polynomial_in_evaluation_form(&polynomial, z, s);
+    let polynomial = blob_to_polynomial(blob).unwrap();
+    let y = evaluate_polynomial_in_evaluation_form(&polynomial, z, s).unwrap();
 
     let mut tmp: Fr;
     let roots_of_unity: &Vec<Fr> = &s.fft_settings.roots_of_unity;
@@ -237,10 +239,10 @@ pub fn compute_kzg_proof(blob: &[Fr], z: &Fr, s: &KZGSettings) -> (G1, Fr) {
         q.coeffs.as_slice(),
         FIELD_ELEMENTS_PER_BLOB,
     );
-    (proof, y)
+    Ok((proof, y))
 }
 
-pub fn evaluate_polynomial_in_evaluation_form(p: &Polynomial, x: &Fr, s: &KZGSettings) -> Fr {
+pub fn evaluate_polynomial_in_evaluation_form(p: &Polynomial, x: &Fr, s: &KZGSettings) -> Result<Fr, String> {
     assert_eq!(p.coeffs.len(), FIELD_ELEMENTS_PER_BLOB);
 
     let roots_of_unity: &Vec<Fr> = &s.fft_settings.roots_of_unity;
@@ -249,7 +251,7 @@ pub fn evaluate_polynomial_in_evaluation_form(p: &Polynomial, x: &Fr, s: &KZGSet
 
     for i in 0..FIELD_ELEMENTS_PER_BLOB {
         if *x == roots_of_unity[i] {
-            return p.coeffs[i];
+            return Ok(p.coeffs[i]);
         }
         inverses_in[i] = x - &roots_of_unity[i];
     }
@@ -275,7 +277,7 @@ pub fn evaluate_polynomial_in_evaluation_form(p: &Polynomial, x: &Fr, s: &KZGSet
     tmp = x.pow(FIELD_ELEMENTS_PER_BLOB);
     tmp = tmp - Fr::one();
     out = out * tmp;
-    out
+    Ok(out)
 }
 
 pub fn compute_powers(base: &Fr, num_powers: usize) -> Vec<Fr> {
@@ -314,7 +316,7 @@ pub fn compute_blob_kzg_proof(blob: &[Fr], commitment: &G1, s: &KZGSettings) -> 
     }
 
     let evaluation_challenge_fr = compute_challenge(blob, commitment);
-    let (proof, _) = compute_kzg_proof(blob, &evaluation_challenge_fr, s);
+    let (proof, _) = compute_kzg_proof(blob, &evaluation_challenge_fr, s).unwrap();
     Ok(proof)
 }
 
@@ -331,9 +333,9 @@ pub fn verify_blob_kzg_proof(
         return Err("Invalid proof".to_string());
     }
 
-    let polynomial = blob_to_polynomial(blob);
+    let polynomial = blob_to_polynomial(blob).unwrap();
     let evaluation_challenge_fr = compute_challenge(blob, commitment_g1);
-    let y_fr = evaluate_polynomial_in_evaluation_form(&polynomial, &evaluation_challenge_fr, ts);
+    let y_fr = evaluate_polynomial_in_evaluation_form(&polynomial, &evaluation_challenge_fr, ts).unwrap();
     verify_kzg_proof(commitment_g1, &evaluation_challenge_fr, &y_fr, proof_g1, ts)
 }
 
@@ -346,10 +348,10 @@ fn compute_challenges_and_evaluate_polynomial(
     let mut ys_fr = Vec::new();
 
     for i in 0..blobs.len() {
-        let polynomial = blob_to_polynomial(&blobs[i]);
+        let polynomial = blob_to_polynomial(&blobs[i]).unwrap();
         let evaluation_challenge_fr = compute_challenge(&blobs[i], &commitments_g1[i]);
         let y_fr =
-            evaluate_polynomial_in_evaluation_form(&polynomial, &evaluation_challenge_fr, ts);
+            evaluate_polynomial_in_evaluation_form(&polynomial, &evaluation_challenge_fr, ts).unwrap();
 
         evaluation_challenges_fr.push(evaluation_challenge_fr);
         ys_fr.push(y_fr);
@@ -532,11 +534,11 @@ fn compute_r_powers(
     compute_powers(&r, n)
 }
 
-pub fn blob_to_polynomial(blob: &[Fr]) -> Polynomial {
+pub fn blob_to_polynomial(blob: &[Fr]) -> Result<Polynomial, String> {
     assert_eq!(blob.len(), FIELD_ELEMENTS_PER_BLOB);
     let mut p = Polynomial::new(FIELD_ELEMENTS_PER_BLOB);
     p.coeffs = blob.to_vec();
-    p
+    Ok(p)
 }
 
 fn poly_to_kzg_commitment(p: &Polynomial, s: &KZGSettings) -> G1 {

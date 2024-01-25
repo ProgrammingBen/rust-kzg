@@ -48,4 +48,16 @@ impl CommonKZGSettings<Fr, G1, G2, FFTSettings, Polynomial> for KZGSettings {
     fn get_roots_of_unity_at(&self, i: usize) -> Fr {
         self.fft_settings.roots_of_unity[i]
     }
+
+    fn get_fft_settings(&self) -> &FFTSettings {
+        &self.fft_settings
+    }
+
+    fn get_g1_secret(&self) -> &[G1] {
+        self.curve.g1_points.as_slice()
+    }
+
+    fn get_g2_secret(&self) -> &[G2] {
+        self.curve.g2_points.as_slice()
+    }
 }
